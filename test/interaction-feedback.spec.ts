@@ -96,7 +96,8 @@ test('toolbar press and keyboard activation keep the pointer target stationary',
   await expect(tool).toHaveClass(/active/);
   await page.keyboard.press('v');
   await expect(page.locator('.tool-btn[data-tool="select"]')).toHaveClass(/active/);
-  await page.keyboard.press('r');
+  await page.keyboard.press('m');
   await expect(tool).toHaveClass(/active/);
   expect(await tool.boundingBox()).toEqual(before);
 });
+
