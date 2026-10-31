@@ -1,0 +1,30 @@
+# Cloudflare Pages security headers (production).
+#
+# The CSP here mirrors the production policy injected into index.html by
+# vite.config.ts (cspPlugin), but as a real HTTP response header it can also
+# carry directives a <meta> tag cannot — notably frame-ancestors (clickjacking
+# protection). If you change one, change the other so they stay in sync.
+#
+# The app runs no server, so a crafted file can't beacon anywhere (#182). The one
+# third party is Google Drive (lib/google-drive.ts): its sign-in and Picker are
+# scripts Google serves, the Picker is a docs.google.com iframe, GIS injects a
+# stylesheet from its origin, and file contents go to googleapis.com. The meta
+# policy gates those hosts on the Drive env vars; production is configured, so
+# this header carries them. Cross-Origin-Opener-Policy must stay
+# `same-origin-allow-popups`: GIS's sign-in popup posts the token back through
+# window.opener, and plain `same-origin` severs that so sign-in never completes.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://accounts.google.com https://docs.google.com; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+# The service worker and manifest must always be revalidated, never served stale
+# from the HTTP cache — otherwise a new deploy's SW (with its bumped cache name)
+# and updated icon URLs can't propagate to an installed PWA. `no-cache` = "check
+# with the server before using the cached copy" (not "don't store").
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

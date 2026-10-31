@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+<defs><filter id="f" x="-20%" y="-20%" width="140%" height="140%">
+    <feFlood flood-color="#0008" result="a"/>
+    <feOffset in="SourceAlpha" dx="3" dy="3" result="o"/>
+    <feColorMatrix in="o" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" result="s"/>
+    <feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter></defs>
+  <rect x="20" y="20" width="60" height="60" fill="#39f" filter="url(#f)"/>
+</svg>

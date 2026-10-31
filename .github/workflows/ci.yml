@@ -1,0 +1,38 @@
+name: Checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run secrets:check
+      - name: Independent history secret scan
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks"
+          "$RUNNER_TEMP/gitleaks/gitleaks" git --log-opts=--all --redact --no-banner
+      - run: npm audit --audit-level=high
+      - run: npm run test:unit
+      - run: npm run build
+      - name: Scan built assets
+        run: '"$RUNNER_TEMP/gitleaks/gitleaks" dir dist --redact --no-banner'
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test test/drive.spec.ts test/save-ownership.spec.ts test/svg-security.spec.ts test/author-styles.spec.ts test/fixtures.spec.ts test/clipboard.spec.ts test/doc-source.spec.ts

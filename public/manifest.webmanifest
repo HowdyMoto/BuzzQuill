@@ -1,0 +1,26 @@
+{
+  "name": "BuzzQuill",
+  "short_name": "BuzzQuill",
+  "description": "A browser-based SVG editor for drawing, editing and exporting vector graphics.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#282828",
+  "theme_color": "#282828",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "image/svg+xml": [".svg"],
+        "application/json": [".svgmaker"]
+      }
+    }
+  ],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

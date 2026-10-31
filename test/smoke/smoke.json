@@ -1,0 +1,6 @@
+{
+  "$comment": "Broad SVG smoke tier — generic load/round-trip assertions over the W3C suite. Files gitignored; fetch with `npm run smoke:fetch`.",
+  "source": "https://www.w3.org/Graphics/SVG/Test/20110816/archives/W3C_SVG_11_TestSuite.tar.gz",
+  "license": "W3C Test Suite License (BSD-3-Clause-style) — https://www.w3.org/Graphics/SVG/Test/",
+  "files": 525
+}

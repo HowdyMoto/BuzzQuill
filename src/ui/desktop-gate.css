@@ -1,0 +1,170 @@
+/* ---------------------------------------------------------------------------
+   Desktop gate — the screen a phone gets instead of the editor (see
+   desktop-gate.ts). Brand yellow, brand black, and the editor's own selection
+   blue; one typeface; one orchestrated moment of motion.
+   --------------------------------------------------------------------------- */
+
+@import '@fontsource/rubik/latin-400.css';
+@import '@fontsource/rubik/latin-500.css';
+@import '@fontsource/rubik/latin-800.css';
+
+/* The editor shell is static markup in index.html, so it would paint for a moment
+   before entry.ts decides. On a device that LOOKS like a phone, hold it invisible
+   until the decision lands. (Only a first-paint hint: the decision itself uses the
+   screen size, which a media query can't see.) */
+@media (hover: none) and (pointer: coarse) and (max-width: 599px),
+       (hover: none) and (pointer: coarse) and (max-height: 599px) {
+  html:not(.gate-decided) #app { visibility: hidden; }
+}
+html.is-phone #app { display: none; }
+
+.dg {
+  --dg-pollen: #ffff40;   /* the logo's yellow */
+  --dg-ink: #000;         /* the logo's black */
+  --dg-body: #34340a;     /* ink warmed toward the yellow, for running text */
+  --dg-select: #20a0ff;   /* the editor's selection chrome (tokens.selectionAccent) */
+
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(28px, env(safe-area-inset-right))
+    max(28px, env(safe-area-inset-bottom))
+    max(28px, env(safe-area-inset-left));
+  background: var(--dg-pollen);
+  color: var(--dg-ink);
+  font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+/* One centred column, however wide the screen (`?gate` on a desktop, for review). */
+.dg > * { width: 100%; max-width: 30rem; margin-inline: auto; }
+
+/* ---- illustration ---- */
+/* The illustration takes whatever height the words leave, on any phone: the SVG
+   fills the area and `meet` scales the drawing to fit it. A vh cap instead left a
+   tall phone with a postage stamp under a field of empty yellow. */
+.dg-art {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 130px;
+  cursor: pointer;
+}
+.dg-svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  max-width: 360px;
+  height: 100%;
+  overflow: visible;
+}
+
+.dg-box { fill: none; stroke: var(--dg-select); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.dg-handle { fill: #fff; stroke: var(--dg-select); stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+/* The drag. The selection scales from its top-left corner (the handle opposite
+   the one being dragged) exactly as the editor's resize does; the cursor rides
+   the bottom-right handle out to the edge of the screen, the artwork strains
+   there, and snaps back — there isn't room. */
+.dg-sel, .dg-cursor { transform-box: view-box; }
+.dg-sel { transform-origin: 55px 60px; }
+.dg-cursor { transform-origin: 265px 239px; }
+
+.dg-art.is-playing .dg-sel { animation: dg-stretch 2.9s 0.4s both; }
+.dg-art.is-playing .dg-cursor { animation: dg-drag 2.9s 0.4s both; }
+
+/* 1.3x carries the bottom-right handle past the edge of the illustration, which
+   on a phone is the edge of the screen — the stretch has to visibly run out of
+   room, or the snap back reads as a glitch rather than a punchline. */
+@keyframes dg-stretch {
+  0%, 20% { transform: scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1); }
+  52%     { transform: scale(1.3); animation-timing-function: ease-out; }
+  60%     { transform: scale(1.315); animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.4); }
+  67%     { transform: scale(0.94); animation-timing-function: ease-out; }
+  75%     { transform: scale(1.03); animation-timing-function: ease-in-out; }
+  82%, 100% { transform: scale(1); }
+}
+
+/* The cursor rides the handle, so its offset is the box's size times the growth:
+   (210, 179) x 0.3 at the peak, x 0.315 at the strain. */
+@keyframes dg-drag {
+  0%   { opacity: 0; transform: translate(30px, 34px) scale(1); animation-timing-function: ease-out; }
+  14%  { opacity: 1; transform: translate(0, 0) scale(1); }
+  20%  { transform: translate(0, 0) scale(0.86); animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1); }
+  52%  { transform: translate(63px, 53.7px) scale(0.86); }
+  60%  { transform: translate(66.2px, 56.4px) scale(0.86); }
+  64%  { transform: translate(66.2px, 56.4px) scale(1); animation-timing-function: ease-in-out; }
+  84%, 100% { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+
+/* Reduced motion: no drag, just the rest state — the mark, its selection, and the
+   cursor waiting on the handle, which tells the same story standing still. */
+@media (prefers-reduced-motion: reduce) {
+  .dg-art.is-playing .dg-sel,
+  .dg-art.is-playing .dg-cursor { animation: none; }
+}
+
+/* ---- words ---- */
+.dg-copy { flex: none; }
+.dg-title {
+  margin: 0 0 14px;
+  font-size: clamp(2.4rem, 11.5vw, 3.4rem);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.dg-body { margin: 0 0 26px; color: var(--dg-body); text-wrap: pretty; }
+
+/* ---- the action ---- */
+.dg-btn {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 20px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--dg-ink);
+  color: var(--dg-pollen);
+  font: 500 17px/1.2 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.12s ease;
+}
+.dg-btn:active { transform: scale(0.98); }
+.dg-btn:focus-visible { outline: 3px solid var(--dg-select); outline-offset: 3px; }
+
+.dg-hint { margin: 14px 0 0; font-size: 15px; color: var(--dg-body); }
+/* No share sheet, so no button: the address IS the action, and gets its weight. */
+.dg-hint.is-primary { margin-top: 0; font-size: 19px; color: var(--dg-ink); }
+.dg-host { font-weight: 500; color: var(--dg-ink); -webkit-user-select: all; user-select: all; }
+
+/* ---- a very short phone held upright (the original iPhone SE and friends) ----
+   A gate must fit on one screen: nobody should have to scroll to find out what to do.
+   The illustration already yields its room; this tightens the words. */
+@media (orientation: portrait) and (max-height: 620px) {
+  .dg { gap: 4px; padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+  .dg-art { min-height: 120px; }
+  .dg-title { font-size: clamp(2.1rem, 11vw, 2.6rem); margin-bottom: 10px; }
+  .dg-body { font-size: 16px; line-height: 1.45; margin-bottom: 18px; }
+  .dg-btn { min-height: 52px; padding-block: 14px; }
+  .dg-hint { margin-top: 10px; font-size: 14px; }
+}
+
+/* ---- a phone on its side: picture left, words right ---- */
+@media (orientation: landscape) and (max-height: 599px) {
+  .dg { flex-direction: row; align-items: center; gap: 28px; }
+  .dg > * { margin-inline: 0; }
+  .dg-art { flex: 1 1 45%; align-self: stretch; min-height: 0; max-width: none; }
+  .dg-copy { flex: 1 1 55%; max-width: 26rem; }
+  .dg-title { font-size: clamp(2rem, 6.5vw, 2.8rem); }
+  .dg-body { margin-bottom: 18px; }
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+<defs><meshgradient id="m" x="0" y="0" gradientUnits="userSpaceOnUse">
+    <meshrow><meshpatch>
+      <stop path="C 25,0 75,0 100,0" stop-color="#f00"/>
+      <stop path="C 100,25 100,75 100,100" stop-color="#0f0"/>
+      <stop path="C 75,100 25,100 0,100" stop-color="#00f"/>
+      <stop path="C 0,75 0,25 0,0" stop-color="#ff0"/>
+    </meshpatch></meshrow>
+  </meshgradient></defs>
+  <rect width="100" height="100" fill="url(#m)"/><rect width="100" height="100" fill="#eee" opacity="0"/>
+</svg>

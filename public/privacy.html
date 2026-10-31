@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BuzzQuill — Privacy Policy</title>
+  <!-- The public copy of the in-app policy (src/ui/legal.ts). Google's OAuth
+       consent screen needs a privacy policy at a plain URL; keep the two in step. -->
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; padding: 48px 20px; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; background: #0f1115; color: #e6e8ec; }
+    main { max-width: 680px; margin: 0 auto; }
+    h1 { font-size: 28px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 28px 0 6px; }
+    p { margin: 0 0 12px; }
+    .date { color: #9aa0a8; margin-bottom: 24px; }
+    a { color: #7ab8ff; }
+    @media (prefers-color-scheme: light) { body { background: #fff; color: #1a1d24; } .date { color: #666; } a { color: #1a5fd6; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Privacy Policy</h1>
+    <p class="date">Effective October 26, 2026</p>
+    <p>BuzzQuill is a browser-based vector editor. Your drawings are created and kept
+    in your browser and in the files you choose to save them to. BuzzQuill runs no
+    server of its own: we never see, collect, or store your artwork.</p>
+
+    <h2>What we collect</h2>
+    <p>Nothing. There are no accounts and no analytics. Opening and saving files uses
+    your browser's own file picker, so the only copies of your work are the ones you
+    make.</p>
+
+    <h2>Google Drive</h2>
+    <p>If you choose to connect Google Drive, BuzzQuill asks Google only for
+    permission to the files you open with it or create with it (the
+    <code>drive.file</code> scope) — never your whole Drive. File contents travel
+    directly between your browser and Google; nothing passes through us, and we keep
+    no record of your Google account. The sign-in token is kept in this tab's session storage and expires
+  after about an hour. Disconnect Google Drive clears it locally and requests
+  revocation from Google. If Google cannot confirm revocation (for example, the
+  token has expired or you are offline), remove BuzzQuill's access from your
+  Google account's security settings. Browser session restore may restore tab
+  storage, so use Disconnect on a shared device.</p>
+
+    <h2>Local storage</h2>
+    <p>Preferences, your recent-files lists and a snapshot of your open documents (so
+    they come back after a reload) live in your browser (localStorage and IndexedDB)
+    and never leave your device.</p>
+
+    <h2>Questions</h2>
+    <p>The source code is public, and questions or reports are welcome on our
+    <a href="https://github.com/HowdyMoto/BuzzQuill/issues">issue tracker</a>.</p>
+  </main>
+</body>
+</html>

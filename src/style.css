@@ -1,0 +1,4535 @@
+/* ============================================================
+   BuzzQuill – Adobe Illustrator-inspired UI
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  /* Modern dark palette — a cool-tinted neutral elevation ramp (deep near-black
+   * chrome, panels a step up, a slightly lighter pasteboard so the artboard
+   * floats) with a refined indigo-blue accent and soft off-white text. Variable
+   * names are unchanged, so the whole app + the design-system page update here. */
+  --ai-bg:           #2c2f36;  /* canvas pasteboard / surround — soft charcoal so
+                                  the white artboard floats without harsh contrast */
+  --ai-panel:        #21242c;  /* main side panels */
+  --ai-panel-dark:   #1c1f26;  /* control bar / secondary chrome */
+  --ai-panel-darker: #171a20;  /* menu bar / status bar / darkest chrome */
+  --ai-input:        #14161b;  /* input wells */
+  --ai-border:       #2d313b;  /* hairline dividers on panels */
+  --ai-border-light: #3b414f;  /* stronger borders / input outlines */
+  --ai-text:         #c9cdd6;  /* primary text — soft cool off-white */
+  --ai-text-dim:     #868d9b;  /* secondary / muted */
+  --ai-text-bright:  #edf0f5;  /* headings / emphasis */
+  --ai-accent:       #4d7cfe;  /* modern indigo-blue */
+  --ai-accent-dim:   #3a5ad4;  /* selected-row background */
+  --ai-highlight:    #2a3040;  /* subtle highlight */
+  /* Container "visual language" — frame = azure, mask = violet (mirror of tokens.ts
+     frameChrome/maskChrome/maskAccent). Bright = selected/entered; dim = persistent. */
+  --ai-frame:        #20a0ff;  /* frame bright (selected) */
+  --ai-frame-dim:    #4f88c4;  /* frame chrome (persistent rail/border) */
+  --ai-mask:         #a06bff;  /* mask bright (selected) */
+  --ai-mask-dim:     #7d5bc0;  /* mask chrome (persistent rail/outline) */
+  --ai-hover:        #2a3040;  /* list / row hover */
+  --ai-active:       #313849;  /* pressed / active */
+  --ai-btn:          #2a2f3b;  /* buttons */
+  --ai-btn-hover:    #353b49;  /* button hover */
+  --ai-menu-bg:      #1b1e25;  /* dropdown menu surface */
+  --ai-menu-hover:   #2a3040;  /* menu item hover */
+  --ai-white:        #ffffff;
+  --ai-black:        #000000;
+  --ai-danger:       #f2564d;  /* modern red */
+
+  --toolbar-w: 40px;
+  --left-panel-w: 240px;
+  --ruler-size: 20px;
+  --panel-w: 260px;
+  --menubar-h: 24px;
+  --statusbar-h: 22px;
+  --tabbar-h: 34px;
+
+  /* Stacking ladder — overlay layers ordered in one place rather than as
+   * scattered magic numbers. Values unchanged from the originals they replaced,
+   * so on-screen stacking is identical; this just names the tiers. */
+  --z-hud: 50;        /* transient HUDs (gesture readout, hints) */
+  --z-chrome: 100;    /* docked app chrome (menu bar) */
+  --z-menu: 200;      /* menu-bar dropdowns */
+  --z-popover: 300;   /* anchored popovers (account menu) */
+  --z-picker: 500;    /* color-picker overlay/panel */
+  --z-floating: 1000; /* command palette, context menus, pathfinder popover */
+  --z-modal: 10000;   /* centered modal dialogs (top of everything) */
+
+  /* Spacing scale — the convention for new CSS so padding/gaps stop being
+   * one-off px values. Existing chrome predates it and isn't retrofitted. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  /* Type scale — the discrete font sizes the UI actually uses, named. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-xl: 22px;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  /* OS-native UI fonts: hinted for small sizes, so they stay crisp at 10-12px
+     better than any bundled webfont. Segoe UI (Win) / SF (mac) / Roboto. */
+  font-family: system-ui, 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px;
+  background: var(--ai-bg);
+  color: var(--ai-text);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+input, select, button { font-family: inherit; font-size: 12px; }
+
+/* Scrubbable numeric fields (see ui/number-scrub.ts): a label that drives an
+   <input type=number> — and the input itself while unfocused — is a drag handle.
+   Hover shows the resize cursor; once focused the input shows the text caret so
+   it can still be typed into. During a drag the cursor is forced everywhere so
+   it survives leaving the handle. */
+label.num-scrub,
+input[type="number"]:not(:focus) { cursor: ew-resize; }
+body.num-scrubbing,
+body.num-scrubbing * { cursor: ew-resize !important; user-select: none !important; }
+
+/* Drop the native spinner arrows everywhere — scrubbing (and typing) replaces
+   them, and they crowd the narrow fields. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ============ MENU BAR ============ */
+#menu-bar {
+  height: var(--menubar-h);
+  background: var(--ai-panel-darker);
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  border-bottom: 1px solid var(--ai-border);
+  flex-shrink: 0;
+  z-index: var(--z-chrome);
+}
+/* Right-aligned chrome cluster (split toggle + Discord) in the menu bar. */
+#menu-chrome { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+#menu-chrome #chrome-actions { margin-left: 0; padding-left: 0; }
+
+.menu-items {
+  display: flex;
+  gap: 0;
+}
+
+.menu-dropdown {
+  position: relative;
+}
+
+/* The trigger is a real <button> (keyboard-operable menu bar, #198) dressed to
+   look exactly like the bare label it used to be: native chrome off, typography
+   inherited, and the 2px block padding cancelled by an equal negative margin so
+   the bar's line box stays 16px tall — that height is what anchors the dropdown
+   panel (`.menu-panel { top: 100% }`), while the hover pill still paints its
+   full 20px. Keep the two in step if you ever change the padding. */
+.menu-trigger {
+  padding: 2px 10px;
+  margin: -2px 0;
+  cursor: default;
+  color: var(--ai-text);
+  border-radius: 2px;
+  background: none;
+  border: 0;
+  font: inherit;
+  appearance: none;
+}
+
+.menu-trigger:hover, .menu-dropdown.open .menu-trigger {
+  background: var(--ai-menu-hover);
+  color: var(--ai-text-bright);
+}
+
+.menu-panel {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  background: var(--ai-menu-bg);
+  border: 1px solid var(--ai-border);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: var(--z-menu);
+  padding: 4px 0;
+}
+
+.menu-dropdown.open .menu-panel {
+  display: block;
+}
+
+.menu-panel button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 20px;
+  background: none;
+  border: none;
+  color: var(--ai-text);
+  cursor: default;
+  text-align: left;
+  position: relative;
+}
+
+/* Keyboard focus reads exactly like hover — arrowing down a menu has to show the
+   same "you are here" row the mouse does. The ring is pulled inside so it can't
+   spill over the panel's border. */
+.menu-panel button:hover,
+.menu-panel button:focus-visible {
+  background: var(--ai-accent);
+  color: white;
+}
+
+.menu-panel button:focus-visible { outline-offset: -2px; }
+
+.menu-panel button .shortcut {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  margin-left: 30px;
+}
+
+.menu-panel button:hover .shortcut,
+.menu-panel button:focus-visible .shortcut {
+  color: rgba(255,255,255,0.7);
+}
+
+/* Greyed-out commands — driven by each command's enabled() predicate. */
+.menu-panel button.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Checkmark for active toggles (Show Grid / Rulers / Transparency). */
+.menu-panel button.checked::before {
+  content: '\2713';
+  position: absolute;
+  left: 7px;
+  font-size: 12px;
+}
+
+/* ---- Command palette (Ctrl/Cmd+K) ---- */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: var(--z-floating);
+}
+.cmdk-overlay[hidden] { display: none; }
+.cmdk-panel {
+  margin-top: 12vh;
+  width: 540px;
+  max-width: 90vw;
+  background: var(--ai-menu-bg);
+  border: 1px solid var(--ai-border);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cmdk-input {
+  padding: 12px 14px;
+  font-size: 15px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ai-border);
+  color: var(--ai-text-bright);
+  outline: none;
+}
+.cmdk-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: default;
+  color: var(--ai-text);
+}
+.cmdk-item.active { background: var(--ai-accent); color: #fff; }
+.cmdk-item.disabled { opacity: 0.4; }
+.cmdk-cat {
+  min-width: 46px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ai-text-dim);
+}
+.cmdk-item.active .cmdk-cat { color: rgba(255, 255, 255, 0.7); }
+.cmdk-label { flex: 1; }
+.cmdk-accel { font-size: 11px; color: var(--ai-text-dim); }
+.cmdk-item.active .cmdk-accel { color: rgba(255, 255, 255, 0.7); }
+
+/* --- About dialog --------------------------------------------------------- */
+/* --- Modal primitive (see ui/modal.ts) ----------------------------------- */
+/* The reusable centered-dialog shell. `.modal-dialog` is the shared surface;
+ * callers add a content class for size/padding. Token-based so a theme change
+ * flows through every dialog at once. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+}
+.modal-dialog {
+  position: relative;
+  box-sizing: border-box;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  color: var(--ai-text);
+  font-size: 13px;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--ai-text-bright); }
+
+/* Export dialog: width only — the surface/behaviour come from .modal-dialog. */
+.export-dialog { width: 420px; }
+
+/* Export Track Layouts (ui/track-layout-dialog.ts): a circuit-name field, then one
+   check row per layout — filename on top, what it's made of below, then any notes. */
+.track-layout-intro { margin: 0 0 12px; color: var(--ai-text-dim); font-size: var(--text-xs); line-height: 1.45; }
+.track-layout-name {
+  width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+}
+.check-row.track-layout-row { align-items: flex-start; }
+.check-row.track-layout-row input { margin-top: 2px; }
+.track-layout-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.track-layout-file { color: var(--ai-text-bright); font-family: 'SF Mono', 'Fira Code', monospace; font-size: var(--text-xs); word-break: break-all; }
+.track-layout-meta { color: var(--ai-text-dim); font-size: var(--text-xs); }
+.track-layout-note { color: var(--ai-danger); font-size: var(--text-xs); }
+.track-layout-skipped { color: var(--ai-text-dim); font-size: var(--text-xs); line-height: 1.45; }
+
+/* Export size row: mode select (scale / width / height) + value input. */
+.export-size-row { display: flex; gap: 6px; }
+.export-size-row select { flex: 1 1 auto; width: auto; }
+.export-size-row input {
+  width: 90px;
+  flex: 0 0 auto;
+  height: 28px;
+  box-sizing: border-box;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+}
+
+/* Dialog section chrome (see ui/components.ts). */
+.modal-header {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--ai-border);
+}
+.modal-title { font-size: var(--text-md); font-weight: 600; color: var(--ai-text-bright); }
+.modal-body { padding: 14px 18px; }
+.modal-footer {
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--ai-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- Reusable controls (see ui/components.ts) ----------------------------- */
+.btn {
+  background: var(--ai-btn);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  color: var(--ai-text);
+  padding: 6px var(--space-4);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.btn:hover { background: var(--ai-btn-hover); }
+.btn--primary {
+  background: var(--ai-accent);
+  border-color: var(--ai-accent-dim);
+  color: var(--ai-white);
+  font-weight: 600;
+  padding: 6px 20px;
+}
+.btn--primary:hover { background: var(--ai-accent-dim); }
+.btn--sm { padding: 3px 10px; font-size: var(--text-xs); }
+
+.ui-select {
+  width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+}
+
+.field { margin-bottom: 14px; }
+.field-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--ai-text-dim);
+  font-size: var(--text-xs);
+}
+.field-actions { display: flex; gap: var(--space-2); margin-bottom: 6px; }
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.check-row:hover { background: var(--ai-highlight); }
+.check-row input { accent-color: var(--ai-accent); }
+
+/* Universal on/off toggle switch. A `<button role="switch">` whose `aria-checked`
+   drives BOTH the visual and accessibility, so the JS just flips one attribute
+   (see ui/components.ts createToggle/setToggle). Use for any boolean setting;
+   pair with a text label to its left. Documented in the design system. */
+.ai-switch {
+  --sw-w: 30px; --sw-h: 18px; --sw-pad: 2px;
+  position: relative; flex: 0 0 auto;
+  width: var(--sw-w); height: var(--sw-h);
+  padding: 0; border: none; border-radius: 999px; cursor: pointer;
+  background: var(--ai-btn);
+  -webkit-appearance: none; appearance: none;
+  transition: background .15s ease;
+}
+.ai-switch::before {
+  content: ''; position: absolute; top: var(--sw-pad); left: var(--sw-pad);
+  width: calc(var(--sw-h) - 2 * var(--sw-pad));
+  height: calc(var(--sw-h) - 2 * var(--sw-pad));
+  border-radius: 50%; background: var(--ai-text-dim);
+  transition: transform .15s ease, background .15s ease;
+}
+.ai-switch[aria-checked="true"] { background: var(--ai-accent); }
+.ai-switch[aria-checked="true"]::before {
+  transform: translateX(calc(var(--sw-w) - var(--sw-h)));
+  background: #fff;
+}
+.ai-switch:hover { filter: brightness(1.12); }
+.ai-switch:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 2px; }
+.ai-switch:disabled { opacity: .45; cursor: default; filter: none; }
+
+/* Shared layout for the narrow, centered, padded content dialogs (About,
+ * Sign-in, Contact). The overlay, surface and ✕ come from the Modal primitive
+ * (.modal-overlay / .modal-dialog / .modal-close in ui/modal.ts); this only adds
+ * the width/padding/alignment those dialogs share on top of it. */
+.about-dialog {
+  width: 420px;
+  padding: 32px 32px 26px;
+  text-align: center;
+}
+.about-logo {
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.about-title {
+  margin: 14px 0 2px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--ai-text-bright);
+}
+.about-version {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--ai-text-dim);
+}
+.about-tagline {
+  margin: 14px 0 8px;
+  color: var(--ai-text-bright);
+}
+.about-copyright {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: var(--ai-text-dim);
+}
+.about-link { color: var(--ai-accent); text-decoration: none; }
+.about-link:hover { text-decoration: underline; }
+
+/* --- Account control (tab-bar cluster) ------------------------------------ */
+#account-area {
+  position: relative;
+}
+
+/* Discord community link (issue #104). A blurple-tinted pill in the tab-bar
+   cluster — a deliberate, always-visible affordance for help & feedback. */
+#discord-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #cdd0f7;
+  background: rgba(88, 101, 242, 0.18); /* Discord blurple, tinted */
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+#discord-link:hover { background: #5865f2; color: #fff; }
+#discord-link .discord-link-icon { display: inline-flex; }
+#discord-link .discord-link-icon svg { width: 15px; height: 15px; display: block; }
+#account-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  max-width: 220px;
+  font-size: 12px;
+  line-height: 1;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s, filter 0.1s, transform 0.06s;
+}
+#account-btn:active { transform: translateY(0.5px); }
+
+/* Signed-out: an accent CTA pill that reads "save your work here". */
+#account-btn.account-cta {
+  gap: 6px;
+  padding: 0 11px 0 9px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ai-accent);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+#account-btn.account-cta:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 9px rgba(33, 150, 243, 0.5);
+}
+.account-cta-icon {
+  display: flex;
+  width: 14px;
+  height: 14px;
+}
+.account-cta-icon svg { width: 100%; height: 100%; display: block; }
+
+/* Signed-in: a compact chip with an initial avatar + name. */
+#account-btn.account-chip {
+  gap: 7px;
+  padding: 0 10px 0 3px;
+  color: var(--ai-text);
+  background: var(--ai-btn);
+  border-color: var(--ai-border-light);
+  border-radius: 11px;
+}
+#account-btn.account-chip:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text-bright);
+}
+.account-avatar {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+}
+.account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Caret: signals the chip opens a menu; rotates when the popover is open. */
+.account-caret {
+  display: inline-flex;
+  align-items: center;
+  margin-left: -3px;
+  color: var(--ai-text-dim);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+#account-btn.account-chip:hover .account-caret { color: var(--ai-text-bright); }
+#account-btn[aria-expanded="true"] .account-caret { transform: rotate(180deg); }
+
+/* The menu bar is a short 24px row, so the signed-in chip shows just its avatar (+ a
+   small caret) — the name and Sign Out live in the dropdown, which already lists the
+   email. Avoids the vertical clip and matches the familiar top-right avatar pattern. */
+#menu-chrome #account-btn.account-chip {
+  gap: 2px; padding: 0 2px;
+  background: transparent; border-color: transparent; border-radius: 50px;
+}
+#menu-chrome #account-btn.account-chip:hover { background: var(--ai-btn-hover); }
+#menu-chrome #account-btn.account-chip .account-name { display: none; }
+#menu-chrome .account-avatar { width: 18px; height: 18px; font-size: 10px; }
+.account-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--ai-menu-bg);
+  border: 1px solid var(--ai-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: var(--z-popover);
+}
+.account-popover-email {
+  padding: 4px 14px 6px;
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ai-border-light);
+  margin-bottom: 4px;
+}
+.account-popover-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--ai-text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.account-popover-item:hover {
+  background: var(--ai-menu-hover);
+  color: var(--ai-text-bright);
+}
+
+/* --- Sign-in dialog (extends .about-dialog) ------------------------------- */
+.signin-dialog:focus { outline: none; } /* programmatic focus target, not a control */
+.signin-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 24px 0 4px;
+}
+.signin-provider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, filter 0.12s, transform 0.06s;
+}
+.signin-provider:active:not(:disabled) { transform: translateY(1px); }
+.signin-provider:focus-visible {
+  outline: 2px solid var(--ai-accent);
+  outline-offset: 2px;
+}
+.signin-provider-logo {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.signin-provider-logo svg { width: 100%; height: 100%; display: block; }
+
+/* Brand-accurate surfaces. */
+.signin-provider--google { background: #fff; color: #1f1f1f; }
+.signin-provider--google:hover:not(:disabled) {
+  filter: brightness(0.97);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.signin-provider--discord { background: #5865f2; color: #fff; }
+.signin-provider--discord:hover:not(:disabled) {
+  filter: brightness(1.07);
+  box-shadow: 0 4px 16px rgba(88, 101, 242, 0.45);
+}
+
+/* Loading: dim siblings, swap the chosen button's logo for a spinner. */
+.signin-provider:disabled { cursor: default; }
+.signin-provider:disabled:not(.is-loading) { opacity: 0.45; }
+.signin-spinner {
+  display: none;
+  position: absolute;
+  right: 16px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: signin-spin 0.7s linear infinite;
+}
+.signin-provider.is-loading .signin-spinner { display: block; }
+@keyframes signin-spin { to { transform: rotate(360deg); } }
+
+.signin-error {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--ai-danger);
+  line-height: 1.4;
+}
+.signin-fineprint {
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--ai-text-dim);
+}
+/* Inline text links rendered as buttons (no real navigation). */
+.signin-link {
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--ai-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.signin-link:hover { color: var(--ai-text-bright); }
+
+/* --- Legal (Privacy / Terms) dialog (extends .about-dialog) --------------- */
+.legal-dialog {
+  width: 560px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  padding: 24px 0 0; /* body handles its own horizontal padding + scroll */
+}
+.legal-dialog:focus { outline: none; }
+.legal-heading {
+  margin: 0 28px;
+  text-align: center;
+}
+.legal-tabs {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 14px 28px 0;
+}
+.legal-tab {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--ai-text);
+  background: var(--ai-panel-darker);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.legal-tab:hover { background: var(--ai-menu-hover); color: var(--ai-text-bright); }
+.legal-body {
+  margin-top: 16px;
+  padding: 4px 28px 24px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ai-text);
+}
+.legal-body section + section { margin-top: 26px; }
+.legal-body h2 {
+  font-size: 16px;
+  color: var(--ai-text-bright);
+  margin-bottom: 2px;
+}
+.legal-body h3 {
+  font-size: 13px;
+  color: var(--ai-text-bright);
+  margin: 16px 0 2px;
+}
+.legal-body p { margin: 6px 0; }
+.legal-body .legal-date {
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  margin-top: 0;
+}
+.legal-body a { color: var(--ai-accent); }
+/* "contact form" link rendered as a button inside policy prose. */
+.legal-contact-link {
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--ai-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- Contact dialog (extends .about-dialog) ------------------------------- */
+.contact-dialog { width: 440px; text-align: left; }
+.contact-dialog .about-title,
+.contact-dialog .about-tagline { text-align: center; }
+.contact-dialog:focus { outline: none; }
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 22px;
+}
+.contact-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--ai-text);
+}
+.contact-optional { color: var(--ai-text-dim); font-weight: 400; }
+.contact-field input,
+.contact-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ai-text-bright);
+  background: var(--ai-input);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 6px;
+  resize: vertical;
+}
+.contact-field input:focus,
+.contact-field textarea:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+/* Honeypot — visually and AT-hidden, but still fillable by naive bots. */
+.contact-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.contact-submit {
+  margin-top: 2px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ai-accent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: filter 0.12s, box-shadow 0.15s;
+}
+.contact-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 9px rgba(33, 150, 243, 0.45);
+}
+.contact-submit:disabled { opacity: 0.6; cursor: default; }
+.contact-error {
+  font-size: 12px;
+  color: var(--ai-danger);
+  line-height: 1.4;
+}
+.contact-thanks {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ai-text-bright);
+}
+.contact-unavailable {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ai-text-dim);
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--ai-border-light);
+  margin: 3px 8px;
+}
+
+/* ---- Recent Files submenu (popout) --------------------------------------
+   Built by ui/menus.ts. The wrapper spans the trigger row AND the popout, so
+   the pointer can travel into the list without crossing dead space. */
+.menu-sub {
+  position: relative;
+}
+
+.menu-sub-trigger {
+  /* Matches .menu-panel button; the extra right padding leaves room for the ▸. */
+  padding-right: 12px;
+}
+
+.menu-sub-arrow {
+  margin-left: auto;
+  padding-left: 18px;
+  font-size: 10px;
+  color: var(--ai-text-dim);
+}
+
+.menu-sub-trigger:hover .menu-sub-arrow,
+.menu-sub-trigger:focus-visible .menu-sub-arrow {
+  color: inherit;
+}
+
+/* The popout itself: same surface as a dropdown, flush with the parent row's top,
+   opening to the RIGHT of the panel. File is the leftmost menu, so there is always
+   room; a long filename ellipsises rather than widening the panel. */
+.menu-recent {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  min-width: 200px;
+  max-width: 320px;
+  background: var(--ai-menu-bg);
+  border: 1px solid var(--ai-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: var(--z-menu);
+}
+
+.menu-sub.open .menu-recent {
+  display: block;
+}
+
+.menu-recent button {
+  font-size: 12px;
+  padding: 3px 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--ai-text);
+  cursor: default;
+}
+
+.menu-recent button:hover,
+.menu-recent button:focus-visible {
+  background: var(--ai-accent);
+  color: #fff;
+}
+
+.menu-recent button:disabled {
+  color: var(--ai-text-dim);
+  font-style: italic;
+  cursor: default;
+}
+
+.menu-recent button:disabled:hover {
+  background: none;
+  color: var(--ai-text-dim);
+}
+
+/* ============ WORKSPACE ============ */
+#workspace {
+  flex: 1;
+  position: relative; /* anchor for the floating toolbar */
+  display: grid;
+  grid-template-columns: var(--left-panel-w) 1fr var(--panel-w);
+  /* Row 1 = the document-tab strip (above the canvas only); row 2 = the canvas. The
+     side docks span both rows (grid-row: 1/-1), so they run full height up to the
+     menu bar while the tabs sit in a notch above the canvas. */
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+/* ============ SPLIT VIEW — EDITOR GROUPS ============ */
+/* Two side-by-side editor groups, each with its OWN row of tabs above its canvas
+   (like VS Code / a browser). There is one live editor under the hood: the FOCUSED
+   group holds the real #canvas-area; the other group's #split-preview shows a
+   snapshot of its document and becomes live the instant you click into it. Group 0
+   is always the left column, group 1 the right; #canvas-area / #split-preview swap
+   columns with focus (`.live-right`) so each document stays on its side. Driven by
+   ui/split-view.ts + the group model in core/document-manager.ts. */
+/* A draggable gutter (#split-gutter, col 3) separates the two panes; --split-left /
+   --split-right are the fr ratios, adjusted by dragging the gutter (ui/split-view.ts). */
+#workspace.split {
+  --split-left: 1fr;
+  --split-right: 1fr;
+  --split-gutter: 8px;
+  grid-template-columns:
+    var(--left-panel-w)
+    minmax(0, var(--split-left))
+    var(--split-gutter)
+    minmax(0, var(--split-right))
+    var(--panel-w);
+  grid-template-rows: auto 1fr; /* row 1 = per-pane tab strips, row 2 = the canvases */
+}
+#workspace.split #tab-bar { display: none; } /* per-pane strips (#tabs-group-0/1) take over */
+#workspace.split #left-panel { grid-column: 1; grid-row: 1 / 3; }
+#workspace.split #panels     { grid-column: 5; grid-row: 1 / 3; }
+/* Tab strips are pinned to their group's column (left/right); the canvases swap. */
+#workspace.split #tabs-group-0 { grid-column: 2; grid-row: 1; }
+#workspace.split #tabs-group-1 { grid-column: 4; grid-row: 1; }
+#workspace.split #canvas-area   { grid-column: 2; grid-row: 2; }
+#workspace.split #split-preview { grid-column: 4; grid-row: 2; }
+#workspace.split #split-gutter  { grid-column: 3; grid-row: 1 / 3; }
+#workspace.split.live-right #canvas-area   { grid-column: 4; }
+#workspace.split.live-right #split-preview { grid-column: 2; }
+#workspace.split #canvas-area,
+#workspace.split #split-preview { box-shadow: inset 0 0 0 1px var(--ai-border); }
+
+/* ---- Resize gutter between the two panes ---- */
+#split-gutter {
+  position: relative;
+  background: var(--ai-panel-darker);
+  cursor: col-resize;
+  touch-action: none;
+}
+#split-gutter[hidden] { display: none; }
+#split-gutter::before { /* centred grip line */
+  content: ''; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px; height: 30px; border-radius: 1px;
+  background: var(--ai-border);
+  transition: background var(--fx) var(--fx-ease);
+}
+#split-gutter:hover::before,
+#split-gutter.dragging::before { background: var(--ai-accent); height: 48px; }
+/* The live pane (always the real #canvas-area) gets an accent frame so it's obvious
+   which side you're editing. */
+#workspace.split #canvas-area { box-shadow: inset 0 0 0 1px var(--ai-accent); }
+
+/* Drag a tab over the right half of the (unsplit) canvas and it lights up to show
+   the tab will open as a second editor group beside this one. */
+#canvas-area.split-drop-hint::after {
+  content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 45%;
+  background: color-mix(in srgb, var(--ai-accent) 12%, transparent);
+  border-left: 2px dashed var(--ai-accent);
+  pointer-events: none; z-index: 5;
+}
+
+/* ---- Per-pane tab strips ---- */
+.pane-tabs {
+  display: flex; align-items: stretch; gap: 2px;
+  min-width: 0; height: 34px; padding: 4px 6px 0;
+  background: var(--ai-panel-darker);
+  border-bottom: 1px solid var(--ai-border);
+  overflow-x: auto; overflow-y: hidden;
+}
+.pane-tabs[hidden] { display: none; }
+.pane-tab-list { display: flex; align-items: stretch; gap: 2px; min-width: 0; }
+/* The focused group's strip is tinted to echo the accent frame on its canvas. */
+#workspace.split .pane-tabs.focused { background: color-mix(in srgb, var(--ai-accent) 8%, var(--ai-panel-darker)); }
+.pane-tab-new {
+  flex: 0 0 auto; width: 24px; align-self: center; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 5px; background: transparent;
+  color: var(--ai-text-dim); font-size: 16px; cursor: pointer;
+}
+.pane-tab-new:hover { background: var(--ai-btn-hover); color: var(--ai-text); }
+/* A pane strip is a valid drop target for a tab dragged from the other pane. */
+.pane-tabs.drop-target { background: color-mix(in srgb, var(--ai-accent) 16%, var(--ai-panel-darker)); }
+
+/* ---- Preview pane (the non-live document) ---- */
+#split-preview {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ai-bg);
+  cursor: pointer;
+}
+#split-preview[hidden] { display: none; }
+.split-preview-body {
+  flex: 1 1 0; min-height: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+/* The document renders as an <img> (data-URL SVG) — isolated, so its ids can't
+   collide with the live canvas's; letterboxed to keep its aspect. */
+.split-preview-body > img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.split-preview-empty { color: var(--ai-text-dim); font-size: 12px; }
+/* A translucent scrim invites the click-to-edit without hiding the artwork. */
+.split-preview-body::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: transparent;
+  transition: background var(--fx) var(--fx-ease);
+}
+#split-preview:hover .split-preview-body::after { background: rgba(120,150,255,0.06); }
+
+/* ============ RESIZABLE SIDE PANELS ============ */
+/* Thin strips pinned to each panel's inner edge; dragging them drives the width
+   CSS vars (see ui/panel-resize.ts). An always-visible grip makes them findable. */
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: var(--z-panel-resizer, 40);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#left-resizer { left: calc(var(--left-panel-w) - 5px); }
+#right-resizer { right: calc(var(--panel-w) - 5px); }
+
+/* Full-height hairline that lights up on hover/drag. */
+.panel-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+/* Always-visible grip (discoverability) — a short rounded bar at mid-height. */
+.panel-resizer::after {
+  content: '';
+  width: 4px;
+  height: 26px;
+  border-radius: 3px;
+  background: var(--ai-border-light);
+  opacity: 0.5;
+  transition: background 0.12s ease, opacity 0.12s ease, height 0.12s ease;
+}
+.panel-resizer:hover::before,
+.panel-resizer.active::before { background: var(--ai-accent); }
+.panel-resizer:hover::after,
+.panel-resizer.active::after {
+  background: var(--ai-accent);
+  opacity: 1;
+  height: 40px;
+}
+
+/* While dragging: force the resize cursor everywhere and don't let the drag
+   select text or hit panel/canvas controls. */
+body.resizing-col { cursor: col-resize !important; user-select: none; }
+body.resizing-col * { pointer-events: none; }
+body.resizing-col .panel-resizer { pointer-events: auto; }
+
+/* ============ LEFT PANEL (Layers) ============ */
+#left-panel {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: var(--ai-panel-darker);
+  border-right: 1px solid var(--ai-border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+
+/* ============ TOOLBAR (Figma-style: floating, bottom-center) ============ */
+#toolbar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-hud);
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  max-width: calc(100vw - 40px);
+  overflow-x: auto;
+  overflow-anchor: none; /* don't let a child's transient transform nudge the scroll */
+}
+
+.tool-section {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1px;
+}
+
+.tool-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--ai-text);
+  cursor: pointer;
+  padding: 3px;
+  transition: background 0.1s;
+}
+
+.tool-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tool-btn:hover {
+  background: var(--ai-btn-hover);
+}
+
+/* Selected tool: a solid accent fill so its state is unmistakable. */
+.tool-btn.active {
+  background: var(--ai-accent);
+  color: #fff;
+}
+.tool-btn.active:hover {
+  background: var(--ai-accent); /* stay selected-looking; don't fall back to the hover grey */
+}
+
+/* Tool-switch feedback (keyboard OR click): a quick background pop on the newly
+   selected icon that settles into the active accent — no outline, just a
+   satisfying flash. */
+@keyframes tool-pulse {
+  0%   { background-color: #7cc0f7; transform: scale(1.14); }
+  100% { background-color: var(--ai-accent); transform: scale(1); }
+}
+
+.tool-btn.pulse {
+  animation: tool-pulse 0.4s ease-out;
+  position: relative;
+  z-index: 1; /* let the pop sit above neighbours */
+}
+
+.tool-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--ai-border-light);
+  margin: 0 3px;
+}
+
+.tool-spacer {
+  display: none; /* not needed in the horizontal floating bar */
+}
+
+/* Toolbar fill/stroke swatches (right end of the floating bar) */
+.toolbar-swatches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 0 4px;
+}
+
+/* ============ DOCUMENT TAB BAR ============ */
+#tab-bar {
+  grid-column: 2; /* above the canvas only — the side docks reach the menu bar */
+  grid-row: 1;
+  display: flex;
+  align-items: stretch;
+  height: var(--tabbar-h);
+  min-height: var(--tabbar-h);
+  background: var(--ai-panel-darker);
+  border-bottom: 1px solid var(--ai-border);
+  padding: 0 8px 0 4px;
+  gap: 2px;
+  /* NOT overflow:hidden — the account menu drops below the bar and must not be
+     clipped. Horizontal scrolling is scoped to #tab-list instead (below). */
+  overflow: visible;
+}
+/* Only the tab list scrolls; #tab-new and the right-hand cluster stay pinned. */
+#tab-list { display: flex; align-items: stretch; gap: 2px; flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+
+/* Right-hand identity/community cluster: Discord + save-status + account.
+   margin-left:auto pushes it to the far right, away from the tabs. */
+#chrome-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.doc-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  max-width: 200px;
+  font-size: 12px;
+  color: var(--ai-text-dim);
+  background: transparent;
+  border: none;
+  border-top: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.doc-tab:hover { background: var(--ai-btn-hover); color: var(--ai-text); }
+.doc-tab.active {
+  color: var(--ai-text);
+  background: var(--ai-panel);
+  border-top-color: var(--ai-accent);
+}
+/* Category tint: a tab backed by a cloud doc in a category washes that category's
+   colour (--cat-solid, set in JS) into its background — stronger when active. */
+.doc-tab[data-cat] { background: color-mix(in srgb, var(--cat-solid) 15%, transparent); }
+.doc-tab[data-cat]:hover { background: color-mix(in srgb, var(--cat-solid) 26%, var(--ai-btn-hover)); }
+.doc-tab[data-cat].active {
+  background: color-mix(in srgb, var(--cat-solid) 30%, var(--ai-panel));
+  border-top-color: var(--cat-solid);
+}
+.doc-tab .doc-tab-name { overflow: hidden; text-overflow: ellipsis; }
+/* Category badge — a category name as a coloured pill (fill set inline in JS). */
+.category-badge {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; line-height: 1.55;
+  white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+}
+/* Identity badge: cloud-backed doc (accent cloud) vs local file (dim page). */
+.doc-tab .doc-tab-badge { display: inline-flex; align-items: center; flex: 0 0 auto; margin-right: -1px; }
+.doc-tab .doc-tab-badge.cloud { color: var(--ai-accent); }
+.doc-tab .doc-tab-badge.local { color: var(--ai-text-dim); }
+.doc-tab.active .doc-tab-badge.local { color: var(--ai-text); }
+.doc-tab .doc-tab-dirty { color: var(--ai-accent); font-size: 14px; line-height: 1; }
+.doc-tab .doc-tab-close {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  border-radius: 3px; width: 16px; height: 16px; line-height: 1; opacity: 0.6;
+}
+.doc-tab .doc-tab-close:hover { opacity: 1; background: var(--ai-btn); }
+
+/* A freshly-created tab (File ▸ New, or the blank that replaces a closed last
+   tab) eases in with a small overshoot — the same satisfying curve the rest of
+   the app uses. Only new tabs get .tab-enter (see ui/tab-bar.ts), so switching
+   and reordering don't animate. */
+@keyframes tab-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.doc-tab.tab-enter { animation: tab-in 240ms cubic-bezier(0.34, 1.45, 0.5, 1); }
+
+/* Drag-to-reorder: fade the tab being dragged; an accent bar on the target's
+   leading/trailing edge shows where it will drop. */
+.doc-tab.doc-tab-dragging { opacity: 0.45; }
+.doc-tab.drop-before { box-shadow: inset 2px 0 0 var(--ai-accent); }
+.doc-tab.drop-after  { box-shadow: inset -2px 0 0 var(--ai-accent); }
+
+/* Inline rename field (double-click a tab), sized to sit in the tab. */
+.doc-tab .layer-rename {
+  font: inherit;
+  width: 110px;
+  min-width: 56px;
+  padding: 1px 4px;
+  background: var(--ai-input);
+  color: var(--ai-text-bright);
+  border: 1px solid var(--ai-accent);
+  border-radius: 3px;
+  outline: none;
+}
+#tab-new {
+  align-self: center;
+  width: 24px; height: 24px; margin-left: 2px;
+  border: none; background: transparent; color: var(--ai-text-dim);
+  border-radius: 4px; cursor: pointer; font-size: 16px; line-height: 1;
+}
+#tab-new:hover { background: var(--ai-btn-hover); color: var(--ai-text); }
+
+/* Split-view toggle — sits next to the "+" new-tab button. */
+
+.swatch-stack {
+  position: relative;
+  width: 28px;
+  height: 28px;
+}
+
+.swatch-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--ai-text-dim);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.swatch-fill .swatch-inner {
+  width: 100%;
+  height: 100%;
+  background: white;
+}
+
+.swatch-stroke {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--ai-text-dim);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.swatch-stroke .swatch-inner {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 3px solid black;
+  box-sizing: border-box;
+}
+
+.swatch-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.swatch-swap, .swatch-default {
+  width: 14px;
+  height: 14px;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 2px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.swatch-swap:hover, .swatch-default:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text);
+}
+
+/* ============ CANVAS ============ */
+#canvas-area {
+  grid-column: 2;
+  grid-row: 2; /* row 1 is the document-tab strip (#tab-bar) */
+  position: relative;
+  overflow: hidden;
+  background: var(--ai-bg);
+}
+
+#svg-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: default;
+}
+
+/* The pasteboard is a giant SVG <rect> painted over #canvas-area; drive its fill
+ * from the palette token (CSS `fill` overrides the element's presentation
+ * attribute) so the canvas surround tracks the theme like everything else. */
+#pasteboard { fill: var(--ai-bg); }
+
+/* ---- Hint chips (the tool-hint strip, at rest and during a gesture) ---- */
+
+.gesture-hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 4px;
+  border-radius: 5px;
+  transition: background 0.1s, color 0.1s;
+}
+.gesture-hud-chip.active {
+  background: var(--ai-accent);
+  color: #fff;
+}
+.gesture-hud-chip kbd {
+  font-family: inherit;
+  font-size: 10px;
+  min-width: 16px;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--ai-text-bright);
+}
+.gesture-hud-chip.active kbd {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+.gesture-hud-label { white-space: nowrap; }
+
+/* Tool-hint strip (ui/tool-hint.ts) — what the active tool can do right now,
+   pinned top-centre. Centred with left/right 0 + auto margins rather than
+   left:50%: an absolute box with left:50% shrink-fits into HALF the canvas width,
+   which wrapped five chips onto two rows. During a drag the same element shows
+   the gesture's modifier chips in the bold .gesturing style below. */
+.tool-hint {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: 92%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(40, 40, 40, 0.92);
+  border: 1px solid var(--ai-border);
+  border-radius: 7px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  pointer-events: none;
+  z-index: var(--z-hud);
+}
+.tool-hint[hidden] { display: none; }
+
+/* An "available now" chip (a real button): outlined in the accent, solid on hover.
+   Distinct from .active, which is the HUD's "this modifier is HELD" fill. */
+.tool-hint button.gesture-hud-chip.accent {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  background: rgba(77, 124, 254, 0.16);
+  border: 1px solid var(--ai-accent);
+  color: var(--ai-text-bright);
+}
+.tool-hint button.gesture-hud-chip.accent:hover { background: var(--ai-accent); color: #fff; }
+.tool-hint button.gesture-hud-chip.accent kbd { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.3); }
+
+/* Gesture mode (ui/gesture-hud.ts): bolder than the resting strip — near-opaque
+   dark surface, a bright accent hairline and an accent glow — so it reads as an
+   active callout, not chrome; the held modifier chips light up (.active). */
+.tool-hint.gesturing {
+  background: rgba(26, 28, 32, 0.97);
+  border-color: var(--ai-accent);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(33, 150, 243, 0.35);
+  color: var(--ai-text-bright);
+}
+
+/* Bulge-in when a gesture's chips (re)appear, so they grab the eye instead of
+   blinking in. The back-eased curve overshoots past 1 then settles — the "bulge".
+   Retriggered in ui/tool-hint.ts by toggling .gh-pop. */
+@keyframes gesture-hud-pop {
+  from { transform: scale(0.94); opacity: 0.5; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.tool-hint.gh-pop { animation: gesture-hud-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .tool-hint.gh-pop { animation: none; }
+}
+
+/* ============ RIGHT PANELS ============ */
+#panels {
+  grid-column: 3;
+  grid-row: 1 / -1;
+  background: var(--ai-panel-darker);
+  border-left: 1px solid var(--ai-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+/* Layers panel grows to fill the remaining height; its list scrolls inside. */
+#panel-layers {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+#panel-layers.collapsed {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+#panel-layers .panel-body-layers {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.panel {
+  flex-shrink: 0;
+  background: var(--ai-panel);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* Inspector header — name + type of the current selection (top of the right panel) */
+#inspector-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 10px 9px;
+  border-bottom: 1px solid var(--ai-border);
+}
+.inspector-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin: -2px -5px; /* keep text flush until hovered/focused */
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ai-text-bright);
+  text-overflow: ellipsis;
+}
+.inspector-name:not([readonly]):hover { border-color: var(--ai-border-light); }
+.inspector-name:focus { outline: none; border-color: var(--ai-accent); background: var(--ai-panel-dark); }
+.inspector-name[readonly] { cursor: default; }
+.inspector-type {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ai-text-dim);
+}
+
+/* "Mixed" (indeterminate) state for property toggles when a multi-selection
+   disagrees on a value — a muted label with an accent underline. */
+.appearance-toggle.indeterminate,
+.text-style-btn.indeterminate {
+  color: var(--ai-text-dim);
+  box-shadow: inset 0 -2px 0 var(--ai-accent);
+}
+
+/* Per-corner radius: a reveal toggle + a 2x2 grid mirroring the corner layout. */
+/* Radius per-corner disclosure: a left-side chevron matching the panel-header
+   convention — points right when collapsed (the default, grid hidden), rotates
+   down when expanded. Same glyph, size and overshoot easing as .panel-collapse. */
+.corner-toggle {
+  flex: 0 0 auto;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 260ms cubic-bezier(0.34, 1.45, 0.5, 1), color var(--fx) var(--fx-ease);
+}
+.corner-toggle:hover { color: var(--ai-text); }
+.corner-toggle.active { transform: rotate(0deg); color: var(--ai-text); }
+.corners-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+.corners-grid input { width: 100%; }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: transparent;
+  cursor: default;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.panel-header span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ai-text);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-right: auto;
+}
+
+.panel-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: none;
+  border: none;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.panel-add:hover {
+  color: var(--ai-accent);
+  background: rgba(127, 143, 166, 0.16);
+}
+
+/* Collapsible-panel header (design system). The disclosure chevron sits at the
+   LEFT of every panel header (flex order), the label fills the middle, and any
+   action button (e.g. the Layers/Symbols +) pins to the right — so the chevron
+   and an action can never be mis-hit for each other. Double-clicking anywhere on
+   the header toggles collapse (wired generically in main.ts). */
+.panel-header { user-select: none; }
+.panel-header .panel-collapse { order: -1; margin-right: 6px; }
+
+.panel-collapse {
+  background: none;
+  border: none;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 9px;
+  padding: 3px 4px;
+}
+
+.panel-header:hover .panel-collapse {
+  color: var(--ai-text);
+}
+
+.panel.collapsed .panel-body,
+.panel.collapsed .panel-footer {
+  display: none;
+}
+
+.panel.collapsed .panel-collapse {
+  transform: rotate(-90deg);
+}
+
+.panel-body {
+  padding: 8px 10px;
+}
+
+.panel-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 5px;
+  align-items: center;
+}
+
+.panel-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  /* Without this, the field can't shrink below its number input's intrinsic
+     width (~142px), so two fields per row overflow the panel and get clipped by
+     #panels' overflow-x:hidden. min-width:0 lets flex:1 share the row evenly. */
+  min-width: 0;
+}
+
+.panel-field.full {
+  flex: 2;
+}
+
+.panel-field label {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  min-width: 14px;
+  flex-shrink: 0;
+}
+
+/* Transform panel uses spelled-out Width/Height. Give every label a shared
+   fixed width and right-align it, so the value inputs line up in one column
+   regardless of label length (X/Y align under Width/Height). */
+/* The Transform panel is a query container so it responds to ITS OWN width
+   (panels resize independently, so a viewport media query wouldn't do). */
+#panel-properties { container: props / inline-size; }
+
+/* 34px just holds "Height" at 11px; every pixel more comes out of the inputs,
+   which need ~47px to show a two-decimal readout like "-1234.56" unclipped. */
+#panel-properties .panel-field label {
+  width: 34px;
+  text-align: right;
+}
+
+/* Width/Height labels: spelled out at normal width, collapsed to W/H when the
+   pane is dragged narrow — and the wide label column reverts to the compact one
+   so the inputs keep their room. */
+.dim-lbl .dim-sm { display: none; }
+@container props (max-width: 214px) {
+  .dim-lbl .dim-lg { display: none; }
+  .dim-lbl .dim-sm { display: inline; }
+  #panel-properties .panel-field label {
+    width: auto;
+    min-width: 14px;
+    text-align: left;
+  }
+}
+
+/* Aspect-ratio lock button ending the W/H row (and a matching empty slot on the
+   X/Y row so the columns stay aligned). Accent-filled when engaged. */
+.tf-lock-slot { flex: 0 0 22px; width: 22px; }
+.ratio-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+}
+.ratio-lock:hover { color: var(--ai-text); background: var(--ai-btn); }
+.ratio-lock.active {
+  color: var(--ai-white);
+  background: var(--ai-accent);
+  border-color: var(--ai-accent-dim);
+}
+
+.panel-field input[type="number"],
+.panel-field input[type="text"],
+.panel-field select {
+  flex: 1;
+  height: 20px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+
+.panel-field input:focus,
+.panel-field select:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+/* Text hit-tests on its whole rectangle, not just the painted glyphs — clicking
+   between letters/lines otherwise falls through to whatever is behind, which
+   makes selecting (and double-click-editing) text needlessly precise.
+   `bounding-box` is SVG2 (Chromium); engines without it ignore the rule and
+   keep glyph hit-testing, where the select tool's bbox rescues still apply. */
+#drawing-layer text {
+  pointer-events: bounding-box;
+}
+
+/* Stroked, fill:none text renders its stroke via a regenerated glyph-outline <path>
+   (core/text-stroke.ts, issue #172) — suppress the browser's own seam-prone text
+   stroke here. A CSS rule (not an inline style, which readStyle would flatten onto
+   the `stroke` attribute and clobber the real colour); the attribute is untouched, so
+   the model still sees the stroke. Stripped from saved/exported files. */
+#drawing-layer text[data-text-stroke-outlined] { stroke: none !important; }
+
+/* Eyedropper tool cursor: the pipette from public/cursor-eyedropper.svg, hotspot
+   at its TIP (2 22) so the sampled pixel is exactly where the tip points. The
+   descendant rule + !important is needed because canvas children carry their own
+   cursors (frame labels are `pointer`, resize handles `*-resize`), which would
+   otherwise win while the tool is active. `crosshair` is the fallback for engines
+   that decline SVG cursors. */
+#svg-canvas.cursor-eyedropper,
+#svg-canvas.cursor-eyedropper * {
+  cursor: url('/cursor-eyedropper.svg') 2 22, crosshair !important;
+}
+
+/* Inline frame-label rename (overlays the on-canvas label; see frame-renderer). */
+.frame-rename-input {
+  position: fixed;
+  z-index: 10000;
+  height: 18px;
+  font: 11px Arial, sans-serif;
+  color: var(--ai-text);
+  background: var(--ai-input);
+  border: 1px solid var(--ai-accent);
+  border-radius: 2px;
+  padding: 0 3px;
+  outline: none;
+}
+
+/* Text panel's Contents field: the string itself, editable in place. */
+.panel-field textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 40px;
+  resize: vertical;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 3px 4px;
+  min-width: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.panel-field textarea:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+/* Text panels (Character + Type settings): their labels are long ("Line height",
+   "Letter spacing", "Alignment") and don't fit BESIDE the input when the panel is
+   narrow — they crush the control to nothing. So here we STACK the label above the
+   input (giving the control full column width) and let a row WRAP to a single column
+   when there isn't room for two. Robust at any panel width; other panels keep the
+   compact side-by-side layout (their labels are short: X / Y / W / H). */
+#panel-type .panel-row,
+#panel-type-advanced .panel-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+#panel-type .panel-field,
+#panel-type-advanced .panel-field {
+  flex: 1 1 92px;          /* two columns when they fit (≥~92px each), else wrap to one */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+#panel-type .panel-field.full,
+#panel-type-advanced .panel-field.full {
+  flex-basis: 100%;        /* Font / Case dropdowns own their row */
+}
+#panel-type .panel-field label,
+#panel-type-advanced .panel-field label {
+  min-width: 0;
+  white-space: nowrap;     /* never wraps: a row goes single-column before a label would */
+}
+
+/* Appearance panel */
+.appearance-group {
+  margin-bottom: 0;
+}
+
+.appearance-divider {
+  height: 1px;
+  background: var(--ai-border);
+  margin: 8px 0;
+}
+
+.appearance-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.appearance-label {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  min-width: 44px;
+}
+
+.stroke-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.stroke-detail-row label {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  min-width: 34px;
+  flex-shrink: 0;
+}
+
+.stroke-detail-row input[type="number"],
+.stroke-detail-row input[type="text"] {
+  flex: 1;
+  height: 20px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.stroke-detail-row input[type="text"] {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.stroke-detail-row input:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+.appearance-color-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.appearance-color-btn:hover {
+  border-color: var(--ai-accent);
+}
+
+.appearance-color-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 1px;
+}
+/* Transparent / "no fill" swatch — a small checkerboard so it reads as empty, not
+   black. Used for a frame with no background colour. */
+.appearance-color-inner.is-transparent {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #b8b8b8 25%, transparent 25%, transparent 75%, #b8b8b8 75%),
+    linear-gradient(45deg, #b8b8b8 25%, transparent 25%, transparent 75%, #b8b8b8 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.appearance-toggle {
+  width: 44px;
+  height: 24px;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 3px;
+  color: var(--ai-text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.1s;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.appearance-toggle:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text-bright);
+}
+
+.appearance-toggle.active {
+  color: var(--ai-text-dim);
+  background: var(--ai-panel-dark);
+}
+
+.appearance-toggle.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 1px),
+    var(--ai-danger) calc(50% - 1px),
+    var(--ai-danger) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+  pointer-events: none;
+}
+
+.appearance-weight {
+  width: 42px;
+  height: 18px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 3px;
+  text-align: center;
+}
+
+.appearance-weight:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+.appearance-unit {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+}
+
+.appearance-slider {
+  flex: 1;
+  height: 3px;
+  accent-color: var(--ai-accent);
+  min-width: 60px;
+}
+
+/* Slider value field (ui/slider-field.ts) — the editable number beside EVERY
+   slider; no slider gets a read-only readout. The unit keeps a min width so the
+   fields of stacked rows line up whether or not a row has a unit. */
+.slider-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.slider-field-input {
+  width: 38px;
+  height: 18px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 3px;
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.slider-field-input:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+.slider-field-unit {
+  min-width: 12px;
+  color: var(--ai-text-dim);
+  font-size: 11px;
+}
+
+/* Drop-shadow parameters — an indented sub-block under the Shadow switch, so the
+   X / Y / Blur / Opacity controls read as belonging to it. Compact labels + flexible
+   fields keep all three offsets on one row without overflowing the panel. */
+.fx-shadow-params {
+  margin: 2px 0 6px 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--ai-border-light);
+}
+.fx-shadow-sub { gap: 6px; }
+.fx-shadow-sub .appearance-label { min-width: 0; }
+.fx-shadow-sub .appearance-weight { flex: 1 1 0; min-width: 30px; width: auto; }
+
+/* Strokes (multi-stroke stack) — accordion rows (ui/strokes-panel.ts) */
+.ap-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.ap-section-label {
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.ap-add-btn {
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 3px;
+  color: var(--ai-text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ap-add-btn:hover { background: var(--ai-accent); color: #fff; }
+
+/* Add-fill type chooser popover (Solid / Gradient / Image / Pattern). */
+.ap-type-menu {
+  position: fixed;
+  z-index: var(--z-picker);
+  min-width: 116px;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 6px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.ap-type-item {
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--ai-text);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 9px;
+}
+.ap-type-item:hover { background: var(--ai-accent); color: #fff; }
+
+/* Image-fill "Replace…" button in the expanded fill details. */
+.ap-img-replace {
+  background: var(--ai-btn);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 4px;
+  color: var(--ai-text);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+.ap-img-replace:hover { background: var(--ai-accent); border-color: var(--ai-accent); color: #fff; }
+
+.ap-list { display: flex; flex-direction: column; gap: 4px; }
+.ap-empty {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  padding: 8px 2px;
+  text-align: center;
+}
+
+.ap-row {
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  background: var(--ai-btn);
+}
+.ap-row.ap-hidden { opacity: 0.5; }
+
+/* A container's fill read from its CONTENTS (an imported icon is a <g> over paths
+   that each paint themselves). Dashed + transparent so it reads as "this colour
+   lives one level down", not as a fill on the group itself — while staying a real,
+   clickable swatch that recolours every shape inside. See buildContentsRow(). */
+.ap-row.ap-contents {
+  background: transparent;
+  border: 1px dashed var(--ai-border-light);
+  padding: 1px;
+}
+.ap-contents-label {
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Drag-to-reorder = the "gap-opening" model (Figma layers / iOS): the picked-up row
+   lifts and tracks the cursor 1:1, while its siblings slide apart to open a socket
+   exactly its size at the landing slot. The opening gap IS the drop affordance — there
+   is no separate drop-line. See wireReorder() in appearance-panel.ts. */
+
+/* Siblings glide to open/close the gap during an active reorder. Scoped under
+   body.ap-reordering AND :not(.ap-dragging) so the picked-up row never inherits a
+   follow-lag transition and freshly rebuilt rows never animate on load/commit. */
+body.ap-reordering .ap-row:not(.ap-dragging) {
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+  will-change: transform;
+}
+
+/* Picked-up row: lifts off the stack and tracks the cursor with ZERO transform lag
+   (only the lift chrome transitions), sitting above its siblings. */
+.ap-row.ap-dragging {
+  position: relative;
+  z-index: 20;
+  outline: 1px solid var(--ai-accent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  cursor: grabbing;
+  will-change: transform;
+  transition: box-shadow 130ms ease-out, outline-color 130ms ease-out;
+}
+/* Mute the row's controls while dragging, but keep the GRIP itself interactive so
+   pointer-capture survives (a pointer-events:none capture target is auto-released). */
+.ap-row.ap-dragging * { pointer-events: none; }
+.ap-row.ap-dragging .ap-grip { pointer-events: auto; }
+
+/* Release: ease the picked-up row down into the opened gap (easeOutQuint, no overshoot
+   so it never jitters past a neighbor) and decay the lift on the same beat. This
+   one-shot class turns the transform transition ON for the settle. */
+.ap-row.ap-dragging.ap-settling {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 200ms ease-out;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Keep the grabbing cursor everywhere during a reorder drag. */
+body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-select: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  body.ap-reordering .ap-row:not(.ap-dragging),
+  .ap-row.ap-dragging.ap-settling { transition-duration: 1ms; }
+}
+
+.ap-head { display: flex; align-items: center; gap: 5px; padding: 4px; }
+.ap-grip {
+  background: none; border: none; color: var(--ai-text-dim);
+  cursor: grab; display: flex; align-items: center; padding: 0; flex: 0 0 auto;
+  opacity: 0.6;
+  transition: opacity 0.12s;
+  touch-action: none; /* a touch-drag on the grip reorders instead of scrolling the panel */
+}
+/* Brighten the grip on row hover so the row visibly reads as draggable. */
+.ap-row:hover .ap-grip { opacity: 1; color: var(--ai-text); }
+.ap-grip:active { cursor: grabbing; }
+.ap-vis, .ap-del, .ap-expand {
+  background: none; border: none; color: var(--ai-text-dim);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  padding: 1px; flex: 0 0 auto;
+}
+.ap-vis:hover, .ap-del:hover, .ap-expand:hover { color: var(--ai-text); }
+.ap-del:hover { color: var(--ai-danger); }
+/* Push the expand + delete controls to the far right of EVERY row (fills and strokes
+   alike), so the ✕ lines up regardless of the fields before it (e.g. stroke weight). */
+.ap-expand { margin-left: auto; }
+.ap-expand svg { transition: transform 200ms cubic-bezier(0.34, 1.45, 0.5, 1); }
+.ap-expand:not(.collapsed) svg { transform: rotate(90deg); }
+.ap-color {
+  width: 24px; height: 22px; padding: 2px; flex: 0 0 auto;
+  border: 1px solid var(--ai-border-light); border-radius: 3px;
+  background: var(--ai-input); cursor: pointer;
+}
+.ap-color-inner { display: block; width: 100%; height: 100%; border-radius: 2px; }
+.ap-color.ap-color-none .ap-color-inner {
+  background: linear-gradient(to top left, transparent 45%, var(--ai-danger) 45%, var(--ai-danger) 55%, transparent 55%);
+}
+.ap-width {
+  width: 44px; height: 20px; flex: 0 0 auto;
+  background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border-light); border-radius: 2px;
+  padding: 0 4px; font-size: 11px;
+}
+.ap-unit { font-size: 10px; color: var(--ai-text-dim); flex: 0 0 auto; }
+
+/* Cut (knockout) stroke — a dashed frame + muted swatch signal "removes, not paints". */
+.ap-row.ap-cut { outline: 1px dashed var(--ai-border-light); outline-offset: -1px; }
+.ap-color.ap-cut-swatch {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ai-text-dim);
+  background: repeating-linear-gradient(45deg, var(--ai-input) 0 3px, var(--ai-btn) 3px 6px);
+}
+.ap-hint { font-size: 10px; color: var(--ai-text-dim); margin-left: 6px; }
+
+.ap-details {
+  padding: 2px 6px 6px;
+  display: flex; flex-direction: column; gap: 5px;
+  border-top: 1px solid var(--ai-border);
+  animation: fx-panel-expand 150ms var(--fx-ease, ease-out);
+}
+.ap-blend {
+  flex: 1; height: 20px; font-size: 11px;
+  background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border-light); border-radius: 2px;
+}
+
+/* Frame panels (export / grid / rulers) */
+/* Label-left, control-right rows (Color / Show grid / Snap / Rulers). */
+.fp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fp-row > :last-child { margin-left: auto; }
+.fp-export {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ai-border);
+}
+.fp-export-head { display: flex; align-items: center; gap: 6px; }
+.fp-export-head .appearance-label { margin-right: auto; }
+.fp-export-add {
+  flex: 0 0 auto; width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 5px; cursor: pointer;
+  background: var(--ai-btn); color: var(--ai-text-dim);
+  font-size: 16px; line-height: 1;
+}
+.fp-export-add:hover { background: var(--ai-accent); color: #fff; }
+
+#fp-export-list { display: flex; flex-direction: column; gap: 4px; }
+/* Each target sits on the same panel-darker surface as its expanded settings card,
+   so a row and its opened panel read as one material. Inputs stay plain text until
+   hover/focus. */
+.fp-target {
+  display: flex; align-items: center; gap: 3px;
+  height: 30px; padding: 0 8px 0 6px; border-radius: 7px;
+}
+.fp-target:hover { background: var(--ai-highlight); }
+.fp-target-fmt {
+  flex: 0 0 auto; min-width: 36px;
+  height: 20px; padding: 0 6px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--ai-border); border-radius: 4px;
+  background: var(--ai-btn); color: var(--ai-text-dim);
+  font-size: 10px; font-weight: 700; letter-spacing: .4px;
+  cursor: pointer;
+}
+.fp-target-fmt:hover { color: var(--ai-text-bright); border-color: var(--ai-text-dim); }
+.fp-target-name, .fp-target-size {
+  height: 22px; padding: 0 5px;
+  min-width: 0; /* override the flex default (`auto`) so an <input>'s intrinsic
+                   width can't act as a floor and blow out the row */
+  background: transparent; color: var(--ai-text);
+  border: 1px solid transparent; border-radius: 4px;
+  font-size: 12px;
+}
+.fp-target-name { flex: 1 1 auto; }
+.fp-target-size { flex: 0 0 60px; width: 60px; text-align: center; color: var(--ai-text-dim); }
+.fp-target-name:hover, .fp-target-size:hover { background: var(--ai-input); }
+.fp-target-name:focus, .fp-target-size:focus {
+  background: var(--ai-input); color: var(--ai-text);
+  border-color: var(--ai-accent); outline: none;
+}
+.fp-target-x {
+  flex: 0 0 auto; width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px; cursor: pointer;
+  background: transparent; color: var(--ai-text-dim); font-size: 10px;
+  opacity: 0; transition: opacity .1s ease;
+}
+.fp-target:hover .fp-target-x { opacity: 1; }
+.fp-target-x:hover { background: var(--ai-danger); color: #fff; }
+/* Per-target export options — a per-row accordion. The caret is the LEADING control
+   (far from the trailing delete, so the two can't be mis-hit); expanding turns the
+   whole wrap into one card so the target's title row and its settings share a frame. */
+.fp-target-wrap {
+  background: var(--ai-panel-darker);
+  border: 1px solid transparent; border-radius: 7px;
+}
+.fp-target-wrap.open { border-color: var(--ai-border); }
+.fp-target-wrap.open .fp-target {
+  border-bottom: 1px solid var(--ai-border); border-radius: 7px 7px 0 0;
+}
+.fp-target-wrap.open .fp-target:hover { background: transparent; } /* it's the card header now */
+.fp-target-gear {
+  flex: 0 0 auto; width: 16px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px; cursor: pointer;
+  background: transparent; color: var(--ai-text-dim);
+  opacity: .5; transition: opacity .1s ease, transform .12s ease, color .1s ease, background .1s ease;
+}
+.fp-target:hover .fp-target-gear, .fp-target-gear.open { opacity: 1; }
+.fp-target-gear:hover { color: var(--ai-text-bright); background: var(--ai-highlight); }
+.fp-target-gear.open { transform: rotate(90deg); color: var(--ai-text); }
+/* Settings live INSIDE the wrap card now — no border/background of their own. */
+.fp-target-opts {
+  display: flex; flex-direction: column; gap: 7px;
+  margin: 0; padding: 9px 10px 11px;
+}
+.fp-target-opts[hidden] { display: none; } /* our display:flex would otherwise defeat [hidden] */
+.fp-opt-row { min-height: 22px; height: auto; margin-bottom: 0; }
+.fp-opt-row .appearance-label,
+.fp-opt-stack .appearance-label { font-size: 11px; color: var(--ai-text-dim); white-space: nowrap; }
+.fp-opt-bg { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.fp-opt-sub { font-size: 11px; color: var(--ai-text-dim); }
+.fp-opt-qty { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+.fp-opt-qty .fp-opt-num { width: 52px; text-align: center; }
+/* File name: a real editable field that fills the row, with a dim ".ext" suffix. */
+.fp-opt-name-holder { display: flex; align-items: center; gap: 5px; margin-left: 12px; flex: 1 1 auto; min-width: 0; }
+.fp-opt-name {
+  flex: 1 1 auto; min-width: 0; height: 20px; padding: 0 6px;
+  background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border-light); border-radius: 4px; font-size: 12px;
+}
+.fp-opt-name:focus { outline: none; border-color: var(--ai-accent); }
+.fp-opt-ext { flex: 0 0 auto; }
+.fp-opt-caption { font-size: 10px; color: var(--ai-text-dim); text-align: right; margin-top: -3px; }
+.fp-opt-divider { height: 1px; background: var(--ai-border); margin: 1px 0; }
+.fp-opt-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; width: auto; margin-left: auto; }
+.fp-opt-seg button { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; height: 22px; white-space: nowrap; }
+.fp-opt-stack { display: flex; flex-direction: column; gap: 4px; padding: 0; }
+.fp-opt-seg-full { display: flex; width: 100%; gap: 2px; margin-left: 0; }
+.fp-opt-seg-full button { flex: 1 1 0; padding: 3px 4px; font-size: 11px; height: 23px; white-space: nowrap; }
+.fp-opt-row .appearance-color-btn { width: 22px; height: 22px; }
+.fp-export-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px; font-weight: 600;
+  border-radius: 6px; cursor: pointer;
+  background: var(--ai-accent); color: #fff;
+  border: 1px solid transparent;
+  transition: filter .12s ease;
+}
+.fp-export-btn:hover { filter: brightness(1.08); }
+.fp-export-btn:active { filter: brightness(0.95); }
+/* Destination line under the button: where repeat exports land. The folder name is
+ * a clickable chip (click = choose a different folder) with a trash button to clear. */
+.fp-export-dest {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 2px 0; font-size: 11px; color: var(--ai-text-dim); min-width: 0;
+}
+.fp-export-dest-label { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; flex: 1 1 auto; white-space: nowrap; }
+.fp-export-dest-icon { flex: 0 0 auto; display: inline-flex; color: var(--ai-text-dim); }
+
+/* Clickable folder chip — click to choose / change the destination folder. The hover
+ * state makes it read as interactive (a subtle inset "pill" with the accent colour). */
+.fp-export-dest-path {
+  display: inline-flex; align-items: center; min-width: 0; max-width: 100%; flex: 0 1 auto;
+  margin: 0; padding: 1px 6px; font: inherit; font-size: 11px; cursor: pointer;
+  color: var(--ai-text); background: none;
+  border: 1px solid transparent; border-radius: 999px;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+.fp-export-dest-path:hover,
+.fp-export-dest-path:focus-visible {
+  background: var(--ai-hover); border-color: var(--ai-border-light); color: var(--ai-accent);
+  outline: none;
+}
+.fp-export-dest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The "no folder yet" ghost chip reads as an accent prompt. */
+.fp-export-dest-set { color: var(--ai-accent); }
+.fp-export-dest-set:hover,
+.fp-export-dest-set:focus-visible { border-style: dashed; }
+
+/* Clear = a small trash-icon button; hover glows danger and gives tactile feedback. */
+.fp-export-dest-clear {
+  flex: 0 0 auto; display: inline-grid; place-items: center;
+  width: 22px; height: 22px; padding: 0; margin: 0;
+  background: none; border: none; border-radius: 6px; cursor: pointer;
+  color: var(--ai-text-dim);
+  transition: background 130ms ease, color 130ms ease, transform 130ms ease;
+}
+.fp-export-dest-clear:hover,
+.fp-export-dest-clear:focus-visible { background: var(--ai-hover); color: var(--ai-danger); transform: scale(1.1); outline: none; }
+.fp-export-dest-clear:active { transform: scale(0.92); }
+
+/* Animate each state change (the row content is rebuilt on set / change / clear). */
+@keyframes fp-dest-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
+.fp-export-dest > * { animation: fp-dest-in 170ms ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .fp-export-dest > * { animation: none; }
+  .fp-export-dest-path, .fp-export-dest-clear { transition: none; }
+}
+/* Grid panel — empty state: one quiet full-width affordance. */
+.fp-add-grid {
+  width: 100%; height: 26px;
+  background: none;
+  border: 1px dashed var(--ai-border-light);
+  border-radius: 5px;
+  color: var(--ai-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color var(--fx) var(--fx-ease), border-color var(--fx) var(--fx-ease);
+}
+.fp-add-grid:hover { color: var(--ai-text); border-color: var(--ai-accent); }
+
+/* Pixels | Divisions — full-width segmented switch, the panel's headline choice. */
+.fp-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+  padding: 2px; margin-bottom: 10px;
+  background: var(--ai-input);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 5px;
+}
+.fp-seg button {
+  height: 20px;
+  border: none; border-radius: 3px;
+  background: none; color: var(--ai-text-dim);
+  font-size: 11px; cursor: pointer;
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease);
+}
+.fp-seg button:hover { color: var(--ai-text); }
+.fp-seg button.active { background: var(--ai-accent-dim); color: var(--ai-text-bright); }
+
+/* px-mode "Major: every [N] px" rows — equal label column so the inputs align. */
+.fp-px-lbl { width: 70px; flex-shrink: 0; }
+
+/* Repeat-grid panel actions: Edit shape on its own line, Bake/Release as an
+   equal pair. Plain secondary buttons — the destructive nuance lives in the
+   tooltips, not in alarm colours. */
+.rp-btn {
+  height: 24px;
+  background: var(--ai-btn);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 5px;
+  color: var(--ai-text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease);
+}
+.rp-btn:hover { background: var(--ai-btn-hover); color: var(--ai-text-bright); }
+.rp-edit { width: 100%; margin-bottom: 6px; }
+.rp-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+/* Remove grid — a tertiary text action, quiet until hovered. */
+.fp-remove-grid {
+  width: 100%; height: 22px; margin-top: 2px;
+  background: none; border: none; border-radius: 3px;
+  color: var(--ai-text-dim); font-size: 11px; cursor: pointer;
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease);
+}
+.fp-remove-grid:hover { background: var(--ai-highlight); color: var(--ai-danger); }
+
+/* Width (variable-width stroke) panel */
+.width-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.width-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.width-preset {
+  background: var(--ai-btn);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  padding: 6px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.width-preset svg {
+  width: 100%;
+  height: 18px;
+}
+.width-preset:hover {
+  border-color: var(--ai-accent);
+  color: var(--ai-text);
+}
+
+/* Stroke panel */
+.btn-group {
+  display: flex;
+  gap: 1px;
+}
+
+.btn-group button {
+  width: 28px;
+  height: 22px;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 3px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  transition: background 0.1s;
+}
+
+.btn-group button svg {
+  width: 18px;
+  height: 12px;
+}
+
+.btn-group button:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text);
+}
+
+.btn-group button.active {
+  background: var(--ai-accent-dim);
+  color: var(--ai-text-bright);
+}
+
+.panel-field input[type="text"] {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+/* Swatches */
+.swatches-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 16px);
+  gap: 2px;
+  padding: 2px;
+}
+
+.swatch-cell {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ai-border);
+  cursor: pointer;
+  border-radius: 1px;
+}
+
+.swatch-cell:hover {
+  border-color: var(--ai-text);
+  transform: scale(1.2);
+}
+
+.swatch-cell.none-swatch {
+  background: white;
+  position: relative;
+}
+
+.swatch-cell.none-swatch::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to bottom right, transparent 45%, red 45%, red 55%, transparent 55%);
+}
+
+/* Align panel */
+.align-buttons {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+/* Align on one row, Distribute on the next. */
+.align-buttons + .align-buttons {
+  margin-top: 4px;
+}
+
+.align-buttons button {
+  width: 28px;
+  height: 24px;
+  background: var(--ai-panel-dark);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.align-buttons button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.align-buttons button:hover {
+  background: var(--ai-hover);
+  border-color: var(--ai-accent);
+  color: var(--ai-text);
+}
+
+/* Type panel */
+.text-style-group {
+  display: flex;
+  gap: 4px;
+}
+
+.text-style-btn {
+  width: 26px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 3px;
+  color: var(--ai-text);
+  cursor: pointer;
+  font-family: serif;
+  transition: background 0.1s;
+}
+.text-style-btn svg { display: block; }
+
+.text-style-btn:hover {
+  background: var(--ai-btn-hover);
+}
+
+.text-style-btn.active {
+  background: var(--ai-accent);
+  color: white;
+}
+
+/* ============ LAYERS ============ */
+.panel-body-layers {
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#layers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: default;
+  border-bottom: 1px solid var(--ai-border);
+  font-size: 12px;
+  position: relative; /* anchors a depth-0 container's rail cap (appended to the row) */
+}
+
+/* Container BLOCK wash — a frame/mask + its contents share a faint type-tinted
+   background so the whole block reads as one grouped panel (nested: a violet mask
+   block sits inside an azure frame block). Declared BEFORE :hover/.selected so those
+   states still win. Plain groups get no wash. */
+.layer-item.block-frame { background: rgba(32, 160, 255, 0.055); }
+.layer-item.block-mask  { background: rgba(160, 107, 255, 0.075); }
+/* The container's own header row gets a slightly stronger wash (the card's title
+   strip); the rounded top edge + divider are drawn by the .panel-seg card border. */
+.layer-item.is-frame { background: rgba(32, 160, 255, 0.10); }
+.layer-item.is-mask  { background: rgba(160, 107, 255, 0.13); }
+
+/* Blank space above each top-level frame so sibling frames read as separated
+   cards. Margin (not padding) so it stays OUT of the row's offsetHeight — the
+   virtualizer measures a clean base height and folds this gap in separately
+   (FRAME_GAP in ui/layers.ts must match this value). */
+.layer-item.frame-sep { margin-top: 8px; }
+
+/* Hover = a transient, NEUTRAL wash (no blue) — "you're pointing at this". Kept
+   categorically different from selection so the two never read as weak-blue vs
+   strong-blue on one scale. */
+.layer-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Selection = a persistent ACCENT state: a blue tint (no left accent bar — it read
+   as redundant against the tint, and against the frame/mask card border).
+   Listed together with :hover (and with higher specificity than .layer-child:hover)
+   so a selected row ALWAYS stays selected — including nested children and while
+   hovered. Hovering a selected row only deepens its tint, never drops it to hover. */
+.layer-item.selected,
+.layer-item.selected:hover,
+.layer-child.selected,
+.layer-child.selected:hover {
+  background: rgba(77, 124, 254, 0.20);
+  color: #fff;
+}
+.layer-item.selected:hover,
+.layer-child.selected:hover {
+  background: rgba(77, 124, 254, 0.28);
+}
+
+/* Drag-to-reorder feedback */
+.layer-item.dragging {
+  opacity: 0.4;
+}
+
+/* Illegal drop target (e.g. a frame into another frame): a soft red wash + ring
+   instead of the blue insertion line; the OS also shows a no-drop cursor. */
+.layer-item.drop-illegal {
+  box-shadow: inset 0 0 0 1.5px var(--ai-danger);
+  background: color-mix(in srgb, var(--ai-danger) 16%, transparent);
+}
+
+/* A quick head-shake "nope" when an illegal rearrange is dropped. */
+@keyframes fx-nope {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-5px); }
+  30% { transform: translateX(4px); }
+  45% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+  80% { transform: translateX(-1px); }
+}
+.layer-item.fx-nope {
+  animation: fx-nope 0.4s ease;
+  box-shadow: inset 0 0 0 1.5px var(--ai-danger);
+}
+
+.layer-item.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--ai-accent);
+}
+
+.layer-item.drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--ai-accent);
+}
+
+/* Depth-aware 'after' drop: a line + leading dot indented to the chosen tree level,
+   so dragging left/right at the end of a nested run visibly picks root vs nested. */
+.layer-item.drop-after.drop-depth {
+  box-shadow: none;
+  position: relative;
+}
+.layer-item.drop-after.drop-depth::after {
+  content: '';
+  position: absolute;
+  left: var(--drop-indent, 8px);
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ai-accent);
+  pointer-events: none;
+}
+.layer-item.drop-after.drop-depth::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--drop-indent, 8px) - 3px);
+  bottom: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ai-accent);
+  pointer-events: none;
+}
+
+.layer-item.drop-inside {
+  background: var(--ai-accent-dim);
+  box-shadow: inset 0 0 0 1px var(--ai-accent);
+}
+
+/* Right-aligned action cluster (visibility + lock + export), Figma-style. */
+.layer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;   /* pin to the right edge of the row */
+  flex-shrink: 0;
+}
+
+.layer-vis, .layer-lock {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--ai-text-dim);
+  flex-shrink: 0;
+  opacity: 0;                       /* hidden until the row is hovered (Figma) */
+  transition: opacity 0.08s ease;
+}
+.layer-item:hover .layer-vis,
+.layer-item:hover .layer-lock { opacity: 0.65; }
+.layer-vis:hover, .layer-lock:hover { opacity: 1; color: var(--ai-text); }
+
+/* A locked padlock and a hidden eye stay visible without hover, so the state is
+   always legible even when the row isn't hovered. */
+.layer-item.is-locked .layer-lock { opacity: 0.9; }
+.layer-item.is-hidden .layer-vis { opacity: 0.9; }
+
+/* Hidden layers read as disabled: dim name + type icon (never the actions) — and so
+   does everything inside a hidden group or frame, since the canvas hides it too. */
+.layer-item.is-hidden .layer-name,
+.layer-item.is-hidden .layer-icon,
+.layer-item.is-ancestor-hidden .layer-name,
+.layer-item.is-ancestor-hidden .layer-icon { opacity: 0.4; }
+
+/* Hidden or locked by a CONTAINER, not by the row's own flag: the eye-off / padlock
+   shows, but quieter than an own state, so "locked by its group" never reads as
+   "locked itself" (unlocking the group then leaves this row unlocked). */
+.layer-item.is-ancestor-hidden .layer-vis,
+.layer-item.is-ancestor-locked .layer-lock { opacity: 0.35; }
+.layer-item.is-ancestor-hidden .layer-vis:hover,
+.layer-item.is-ancestor-locked .layer-lock:hover { opacity: 1; }
+
+/* Disclosure slot — always present (empty for childless rows) so names left-align. */
+.layer-disclosure {
+  width: 14px;
+  min-width: 14px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ai-text-dim);
+  flex-shrink: 0;
+}
+.layer-disclosure.is-toggle { cursor: pointer; }
+.layer-disclosure.is-toggle:hover { color: var(--ai-text); }
+/* Single chevron: points right when collapsed, rotates to point down when
+   expanded. On toggle, layers.ts adds chev-open/close for a one-shot rotate
+   (same curve as the side-panel chevrons); otherwise it rests statically. */
+.layer-disclosure svg { transform-origin: 50% 50%; }
+.layer-disclosure.is-toggle.expanded svg { transform: rotate(90deg); }
+.layer-disclosure.chev-open svg  { animation: fx-chev 260ms cubic-bezier(0.34, 1.45, 0.5, 1); }
+.layer-disclosure.chev-close svg { animation: fx-chev 260ms cubic-bezier(0.34, 1.45, 0.5, 1) reverse; }
+@keyframes fx-chev { from { transform: rotate(0deg); } to { transform: rotate(90deg); } }
+
+.layer-color {
+  width: 6px;
+  height: 16px;
+  background: var(--ai-accent);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.layer-icon {
+  display: flex;
+  align-items: center;
+  color: var(--ai-text-dim);
+  flex-shrink: 0;
+}
+
+.layer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 2px;
+}
+
+.layer-rename {
+  flex: 1;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-accent);
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-size: 12px;
+  outline: none;
+}
+
+
+.context-menu {
+  position: fixed;
+  z-index: var(--z-floating);
+  min-width: 130px;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  background: none;
+  border: none;
+  color: var(--ai-text);
+  text-align: left;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.context-menu-item:hover {
+  background: var(--ai-accent);
+  color: white;
+}
+
+.context-menu-item.danger:hover {
+  background: #c0392b;
+}
+
+.panel-footer {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  background: transparent;
+  border-top: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.panel-footer button {
+  flex: 1;
+  height: 22px;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 2px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.panel-footer button:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text);
+}
+
+/* ============ STATUS BAR ============ */
+#status-bar {
+  height: var(--statusbar-h);
+  background: var(--ai-panel-darker);
+  border-top: 1px solid var(--ai-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ai-text-dim);
+}
+
+.status-left, .status-center, .status-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-left { min-width: 180px; }
+.status-right { min-width: 200px; justify-content: flex-end; }
+
+#zoom-select {
+  height: 16px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.status-btn {
+  width: 18px;
+  height: 16px;
+  background: var(--ai-btn);
+  border: none;
+  border-radius: 2px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.1s;
+}
+
+.status-btn:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-text);
+}
+
+/* ============ SCROLLBARS ============ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--ai-panel-dark); }
+::-webkit-scrollbar-thumb { background: var(--ai-border-light); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ai-text-dim); }
+
+/* ============ CURSOR OVERRIDES ============ */
+#svg-canvas[data-tool="select"],
+#svg-canvas[data-tool="directSelect"],
+#svg-canvas[data-tool="direction"] { cursor: default; }
+#svg-canvas[data-tool="rect"],
+#svg-canvas[data-tool="ellipse"],
+#svg-canvas[data-tool="line"],
+#svg-canvas[data-tool="polyline"],
+#svg-canvas[data-tool="polygon"],
+#svg-canvas[data-tool="star"],
+#svg-canvas[data-tool="path"] { cursor: crosshair; }
+#svg-canvas[data-tool="text"] { cursor: text; }
+#svg-canvas[data-tool="hand"] { cursor: grab; }
+#svg-canvas[data-tool="zoom"] { cursor: zoom-in; }
+#svg-canvas[data-tool="eyedropper"] { cursor: crosshair; }
+#svg-canvas[data-tool="frame"] { cursor: crosshair; }
+
+/* ============ COLOR PICKER POPOVER ============ */
+.cpicker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-picker);
+}
+
+.cpicker-panel {
+  position: fixed;
+  width: 240px;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  padding: 10px;
+  z-index: calc(var(--z-picker) + 1);
+}
+
+.cpicker-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ai-text-bright);
+  margin-bottom: 8px;
+}
+
+.cpicker-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cpicker-preview {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.cpicker-preview.cpicker-none {
+  background: white !important;
+  position: relative;
+}
+
+.cpicker-preview.cpicker-none::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom right, transparent 45%, red 45%, red 55%, transparent 55%);
+}
+
+.cpicker-hex-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cpicker-hash {
+  color: var(--ai-text-dim);
+  font-size: 12px;
+}
+
+.cpicker-hex {
+  width: 70px;
+  height: 22px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 6px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.cpicker-hex:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+.cpicker-slider {
+  flex: 1;
+  min-width: 0; /* shrink below the native range width so the value field fits */
+  height: 3px;
+  accent-color: var(--ai-accent);
+}
+
+/* --- Advanced solid picker: SV square + hue slider + model channels --- */
+.cpicker-sv {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: 5px;
+  margin-bottom: 10px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.cpicker-sv-knob {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.cpicker-hue {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  touch-action: none;
+  background: linear-gradient(to right,
+    #f00 0%, #ff0 16.6%, #0f0 33.3%, #0ff 50%, #00f 66.6%, #f0f 83.3%, #f00 100%);
+}
+.cpicker-hue-knob {
+  position: absolute;
+  top: -3px;
+  width: 6px;
+  height: 18px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.cpicker-model-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.cpicker-model-sel {
+  height: 26px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 0 2px;
+}
+.cpicker-chan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.cpicker-chan-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ai-text-dim);
+}
+.cpicker-chan-input {
+  width: 100%;
+  height: 24px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  text-align: center;
+  font-size: 11px;
+  padding: 0 2px;
+}
+.cpicker-chan-input:focus,
+.cpicker-model-sel:focus { outline: none; border-color: var(--ai-accent); }
+
+.cpicker-slider-val {
+  width: 36px;
+  height: 20px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0 3px;
+  text-align: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.cpicker-slider-val:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+}
+
+.cpicker-divider {
+  height: 1px;
+  background: var(--ai-border-light);
+  margin: 8px 0;
+}
+
+.cpicker-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 16px);
+  gap: 2px;
+}
+
+/* ============ PAINT PICKER TABS & GRADIENT/PATTERN ============ */
+
+.cpicker-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cpicker-tab {
+  flex: 1;
+  background: var(--ai-btn);
+  color: var(--ai-text-dim);
+  border: none;
+  padding: 4px 0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cpicker-tab.active {
+  background: var(--ai-accent);
+  color: #fff;
+}
+.cpicker-tab:hover:not(.active) {
+  background: var(--ai-btn-hover);
+}
+
+.cpicker-content {
+  min-height: 80px;
+  /* Gradient / pattern tabs now embed the full solid editor, so a tab can get
+     tall; keep the popover on-screen by scrolling the content, not the chrome. */
+  max-height: 64vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* room so the scrollbar never overlaps the SV-square / hue knobs */
+  padding-right: 2px;
+}
+
+/* Small dim section heading inside the picker (e.g. "Color" above a bound editor). */
+.cpicker-section-label {
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  margin: 8px 0 4px;
+}
+
+/* The per-stop solid editor sits under the stop's position row, gently separated. */
+.cpicker-stop-color-editor {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ai-border);
+}
+
+.cpicker-grad-preview {
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid var(--ai-border-light);
+  margin-bottom: 6px;
+}
+
+.cpicker-stop-bar {
+  position: relative;
+  height: 18px;
+  background: var(--ai-input);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.cpicker-stop-handle {
+  position: absolute;
+  top: -2px;
+  width: 10px;
+  height: 20px;
+  margin-left: -5px;
+  border: 2px solid var(--ai-border-light);
+  border-radius: 2px;
+  cursor: ew-resize;
+  box-sizing: border-box;
+}
+.cpicker-stop-handle.active {
+  border-color: var(--ai-accent);
+  z-index: 1;
+}
+
+.cpicker-stop-editor {
+  margin-bottom: 6px;
+}
+
+.cpicker-stop-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ai-text-dim);
+}
+
+.cpicker-stop-color {
+  width: 28px;
+  height: 20px;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+}
+
+.cpicker-stop-rm {
+  background: var(--ai-btn);
+  border: none;
+  color: var(--ai-text-dim);
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 5px;
+  margin-left: auto;
+  transition: background 0.1s;
+}
+.cpicker-stop-rm:hover {
+  background: #c00;
+  color: #fff;
+}
+
+.cpicker-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--ai-text-dim);
+}
+.cpicker-dir-row label {
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.cpicker-select {
+  flex: 1;
+  height: 22px;
+  background: var(--ai-input);
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 2px;
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+/* Fixed viewport onto the pattern: the box owns the transparency checker and clips,
+   the single child renders the content (an inline <svg> filled with the real
+   `<pattern>` def for presets, a fitted image for the Image tab). Rotation therefore
+   happens INSIDE the box, via the def's patternTransform — never by transforming this
+   element, which used to swing a rotated bar diagonally across the whole picker.
+   The checker is mid-grey deliberately: it's what shows through the tile's gaps, so
+   both a black and a white tint stay legible against it. */
+.cpicker-pat-preview {
+  position: relative;
+  height: 48px;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 3px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, #7d7d7d 25%, transparent 25%, transparent 75%, #7d7d7d 75%) 0 0 / 14px 14px,
+    linear-gradient(45deg, #7d7d7d 25%, transparent 25%, transparent 75%, #7d7d7d 75%) 7px 7px / 14px 14px,
+    #9a9a9a;
+}
+.cpicker-pat-preview svg { display: block; }
+/* Image tab: the whole source image, fitted and centred over the same checker. */
+.cpicker-pat-fit {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+/* Image preview: taller so the whole source image (fit with `contain`) reads clearly. */
+.cpicker-pat-preview--image { height: 96px; }
+
+/* Linear/Radial toggle inside the Gradient tab. */
+.cpicker-seg {
+  display: flex;
+  margin-bottom: 8px;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cpicker-seg-btn {
+  flex: 1;
+  background: var(--ai-input);
+  border: none;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 5px 0;
+}
+.cpicker-seg-btn + .cpicker-seg-btn { border-left: 1px solid var(--ai-border-light); }
+.cpicker-seg-btn.active { background: var(--ai-accent); color: #fff; }
+
+.cpicker-upload-btn {
+  width: 100%;
+  padding: 6px;
+  background: var(--ai-btn);
+  color: var(--ai-text);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-bottom: 6px;
+  transition: background 0.1s;
+}
+.cpicker-upload-btn:hover {
+  background: var(--ai-btn-hover);
+  color: var(--ai-accent);
+}
+
+/* ============ LAYER HIERARCHY ============ */
+
+/* Indent spacer container */
+.layer-indent {
+  display: inline-flex;
+  position: relative;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+/* Vertical guide lines for each depth level */
+.layer-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ai-border-light);
+}
+
+/* Plain-group rail: a neutral grey guide with rounded caps that turn it into a [
+   bracket — top cap on the group's header, bottom cap on its last child. (Frames and
+   masks use the .panel-seg card treatment below instead of a rail.) */
+.layer-indent-guide.rail-group { background: var(--ai-border-light); }
+.layer-indent-guide.rail-cap-top    { top: 11px;    border-radius: 2px 2px 0 0; }
+.layer-indent-guide.rail-cap-bottom { bottom: 11px; border-radius: 0 0 2px 2px; }
+
+/* Nested container CARDS. A frame (azure) or mask (violet) + its contents render as
+   one rounded, bordered panel — matching the on-canvas container language. Each row
+   contributes its horizontal slice of the card: side walls on every row, a rounded
+   top edge + a header divider on the container's own header row, a rounded bottom
+   edge on its last descendant. Stacked slices nest — a violet mask card sits inside
+   an azure frame card (each deeper card inset a little on both sides). Chrome only,
+   so it never eats a click. */
+.panel-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  /* All four sides solid + colored (below); only left/right have width by default.
+     top/bottom widths are turned on per-row so the border-COLOR is never reset to
+     currentColor by a `border-top` shorthand (that white-edge bug). */
+  border-style: solid;
+  border-width: 0 1.5px;
+}
+.panel-seg.panel-frame { border-color: var(--ai-frame-dim); }
+.panel-seg.panel-mask  { border-color: var(--ai-mask-dim); }
+.panel-seg.seg-top {
+  border-top-width: 1.5px;
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+}
+.panel-seg.seg-bottom {
+  border-bottom-width: 1.5px;
+  border-bottom-left-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+/* Header divider — a hairline under the container's title strip, inside the card.
+   Only when the card opens downward (has content below the header); a collapsed/empty
+   single-row card is both seg-top AND seg-bottom, and gets no internal divider. */
+.panel-seg.panel-frame.seg-top:not(.seg-bottom) { box-shadow: inset 0 -1.5px 0 rgba(79, 136, 196, 0.45); }
+.panel-seg.panel-mask.seg-top:not(.seg-bottom)  { box-shadow: inset 0 -1.5px 0 rgba(125, 91, 192, 0.45); }
+
+/* Tint a frame/mask container's folder icon to its hue; brighten it when selected. */
+.layer-item.is-frame .layer-icon { color: var(--ai-frame-dim); }
+.layer-item.is-mask  .layer-icon { color: var(--ai-mask-dim); }
+.layer-item.is-frame.selected .layer-icon { color: var(--ai-frame); }
+.layer-item.is-mask.selected  .layer-icon { color: var(--ai-mask); }
+
+/* Child rows get a subtle base tint. (No .layer-child:hover here — .layer-item:hover
+   already covers it, and a separate rule declared later used to override .selected
+   for hovered children, dropping their selection state.) */
+.layer-child {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Group rows are slightly bolder */
+.layer-group {
+  font-weight: 500;
+}
+
+/* Group color indicator */
+.layer-color-group {
+  background: #e0a030;
+}
+
+/* Tree branch connector (the little "L" shape for leaf children) */
+.layer-tree-connector {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--ai-border-light);
+  border-bottom: 1px solid var(--ai-border-light);
+  border-radius: 0 0 0 2px;
+  margin-bottom: 4px;
+}
+
+/* Expand/collapse toggle arrow */
+.layer-group-toggle {
+  cursor: pointer;
+  font-size: 9px;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  opacity: 0.6;
+  line-height: 1;
+}
+.layer-group-toggle:hover { opacity: 1; }
+
+.symbol-place-btn {
+  background: var(--ai-btn);
+  border: none;
+  color: var(--ai-text);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 5px;
+  margin-left: auto;
+  line-height: 16px;
+  transition: background 0.1s;
+}
+.symbol-place-btn:hover {
+  background: var(--ai-btn-hover);
+  color: #fff;
+}
+
+.panel-unit {
+  font-size: 11px;
+  color: var(--ai-text-dim);
+  margin-left: 2px;
+}
+
+#prop-rotation {
+  width: 52px;
+}
+
+/* ============ RESPONSIVE HELPERS ============ */
+.hidden { display: none !important; }
+
+/* ============ LIVE BOOLEAN (PATHFINDER) ============ */
+/* Operands are the editable source of truth but are hidden in normal view — the
+   cached <path data-bool-result> is what the user sees. Hiding via CSS (not a
+   markup attribute) keeps document/export markup canonical; operands are stripped
+   on export. display:none also makes the wrapper's bbox hug the result. */
+g[data-boolean] > [data-bool-operand] { display: none; }
+
+/* Isolation mode (double-click): reveal operands as ghosted, editable scaffolding
+   and dim the result so the operands are easy to grab. Non-destructive — each
+   operand's real paint stays in its attributes and is restored on exit. */
+g[data-boolean][data-bool-editing] > [data-bool-operand] {
+  display: inline;
+  fill: rgba(45, 127, 249, 0.05);
+  stroke: var(--ai-accent);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 4 3;
+}
+g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
+
+/* Pathfinder panel rows */
+.pathfinder-buttons button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+.pathfinder-row { display: flex; gap: 6px; margin-top: 8px; }
+.pf-text-btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid var(--ai-border, #3a3a3a);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ai-text, #ddd);
+  cursor: pointer;
+}
+.pf-text-btn:hover { background: var(--ai-hover, rgba(255,255,255,0.06)); }
+.pf-text-btn.active { background: var(--ai-accent); border-color: var(--ai-accent); color: #fff; }
+.pathfinder-hint { margin-top: 6px; font-size: 10px; color: var(--ai-text-dim, #888); text-align: center; }
+
+/* ---- Contextual bars (Pathfinder / path-actions / image-actions) ----------
+   One floating row above the selection saying "what can I do with this?"
+   (ui/selection-popover.ts places them). They share one look: a frosted panel
+   with a soft highlight along its top edge, a layered shadow so it floats over
+   the artwork, and a small nub pointing at the selection it belongs to. */
+.ctx-popover {
+  position: fixed;
+  z-index: var(--z-floating);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  --ctx-bg: color-mix(in srgb, var(--ai-panel, #2a2a2a) 82%, transparent);
+  --ctx-line: color-mix(in srgb, var(--ai-border, #444) 70%, #fff 12%);
+  background: var(--ctx-bg);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid var(--ctx-line);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 6px rgba(0, 0, 0, 0.28),
+    0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  transform-origin: var(--ctx-nub-x, 50%) calc(100% + 6px);
+}
+.ctx-popover[hidden] { display: none; }
+/* The nub: a small triangle on the edge facing the selection, at the selection's
+   centre (--ctx-nub-x, set by the placement code, measured from the border edge).
+   It is a rotated square clipped to its outer half, so it carries the bar's own
+   hairline on its two visible edges — without it the nub was a smudge on the
+   empty canvas — and its base sits on the border so the two read as one shape. */
+.ctx-popover::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--ctx-nub-x, 50%) - 6px);
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--ctx-bg);
+  border-right: 1px solid var(--ctx-line);
+  border-bottom: 1px solid var(--ctx-line);
+  transform: rotate(45deg);
+  clip-path: polygon(0 100%, 100% 100%, 100% 0);
+  pointer-events: none;
+}
+.ctx-popover[data-placed="below"] { transform-origin: var(--ctx-nub-x, 50%) -6px; }
+.ctx-popover[data-placed="below"]::after {
+  bottom: auto;
+  top: -5px;
+  border: none;
+  border-left: 1px solid var(--ctx-line);
+  border-top: 1px solid var(--ctx-line);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.ctx-popover button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ai-text, #ddd);
+  cursor: pointer;
+  position: relative;
+}
+.ctx-popover button:hover {
+  background: color-mix(in srgb, var(--ai-hover, #2a3040) 70%, #fff 8%);
+  color: #fff;
+}
+.ctx-popover button:hover { transform: translateY(-1px); } /* the whole button lifts; a press (scale, below) overrides it */
+.ctx-popover .pf-pop-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 3px;
+  background: linear-gradient(to bottom, transparent, var(--ai-border, #444) 25%, var(--ai-border, #444) 75%, transparent);
+}
+
+/* Entrance — playful, not loud: the bar springs out of the selection's edge
+   (~¼ s, a touch of overshoot) and its buttons follow one by one. It plays ONCE
+   per selection (ui/selection-popover.ts adds .ctx-enter only for a new
+   selection, not when the bar returns after a drag). */
+@keyframes ctx-bar-in {
+  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.86); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ctx-item-in {
+  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.7); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ctx-popover.ctx-enter {
+  --ctx-dy: 8px;
+  animation: ctx-bar-in 240ms cubic-bezier(0.34, 1.5, 0.6, 1) both;
+}
+.ctx-popover.ctx-enter[data-placed="below"] { --ctx-dy: -8px; }
+.ctx-popover.ctx-enter > * {
+  animation: ctx-item-in 260ms cubic-bezier(0.34, 1.6, 0.6, 1) both;
+  animation-delay: calc(50ms + var(--ctx-i, 0) * 24ms);
+}
+
+/* Pathfinder bar: icon buttons (the boolean glyphs are wide and short). */
+.pathfinder-popover button { width: 30px; padding: 0; }
+.pathfinder-popover button svg { width: 22px; height: 14px; }
+.pathfinder-popover .pf-pop-swap.active { background: var(--ai-accent); color: #fff; }
+/* Two open strokes: Join is what's wanted, so it leads the booleans. */
+.pathfinder-popover.join-first #pf-pop-join { order: -2; }
+.pathfinder-popover.join-first [data-pf-joinsep] { order: -1; }
+/* Labelled buttons (Mask, Join): sized by the label, icon kept square. */
+.pathfinder-popover button.pf-pop-text { width: auto; gap: 5px; padding: 0 9px 0 7px; font-size: 11px; font-weight: 500; }
+.pathfinder-popover button.pf-pop-text svg { width: 16px; height: 16px; }
+
+/* Path-actions / image-actions bars: labelled buttons (Edit Points, Offset, Crop…). */
+.path-actions-popover button { gap: 5px; padding: 0 9px 0 7px; font-size: 11px; font-weight: 500; }
+.path-actions-popover button svg { flex: 0 0 auto; }
+
+/* Effects/markers/blend dropdowns */
+.appearance-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 4px;
+  border: 1px solid var(--ai-border, #444);
+  border-radius: 4px;
+  background: var(--ai-input, #1e1e1e);
+  color: var(--ai-text, #ddd);
+}
+
+/* Stroke Cap / Corners: labelled segmented controls (words, not tiny ambiguous
+   glyphs), so the option is obvious at a glance. */
+.stroke-seg {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  padding: 2px;
+  background: var(--ai-input);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 5px;
+}
+.stroke-seg button {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 3px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease);
+}
+.stroke-seg button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stroke-seg button:hover { color: var(--ai-text); }
+.stroke-seg button.active { background: var(--ai-accent-dim); color: var(--ai-text-bright); }
+
+/* --- Elegant dialogs (ui/dialogs.ts) ------------------------------------- */
+.dlg { width: 400px; max-width: 92vw; text-align: left; padding: 0; overflow: hidden; }
+.dlg-head { padding: 20px 22px 0; }
+.dlg-title { margin: 0; font-size: 16px; font-weight: 650; color: var(--ai-text-bright); letter-spacing: -0.01em; }
+.dlg-msg { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--ai-text-dim); }
+.dlg-body { padding: 16px 22px 4px; display: flex; flex-direction: column; gap: 14px; }
+.dlg-body:empty { padding: 6px 0 0; }
+.dlg-field { display: flex; flex-direction: column; gap: 6px; }
+.dlg-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ai-text-dim); }
+/* Inline caution under a dialog field (e.g. duplicate board name, #203). */
+.dlg-hint-warn { font-size: 11px; color: var(--ai-warn, #e0a34a); }
+/* ---- Object styles: which library styles the selection uses ---- */
+.os-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.os-row + .os-row { border-top: 1px solid var(--ai-border); margin-top: 2px; padding-top: 6px; }
+.os-preview { flex: 0 0 auto; }
+.os-body { flex: 1 1 auto; min-width: 0; }
+.os-name {
+  font-size: 12px; color: var(--ai-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.os-meta {
+  font-size: 10.5px; color: var(--ai-text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.os-btn {
+  flex: 0 0 auto; width: 22px; height: 22px; display: grid; place-items: center;
+  background: transparent; border: none; border-radius: 4px; cursor: pointer;
+  color: var(--ai-text-dim); font-size: 12px;
+}
+.os-btn:hover { background: var(--ai-hover); color: var(--ai-text); }
+.os-btn:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 1px; opacity: 1; }
+
+/* ---- Style panel: live editor for the focused library style ---- */
+.sp-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+.sp-head-text { flex: 1 1 auto; min-width: 0; }
+.sp-title {
+  font-size: 13px; font-weight: 600; color: var(--ai-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-sub { font-size: 11px; color: var(--ai-text-dim); }
+.sp-close {
+  flex: 0 0 auto; background: none; border: none; cursor: pointer;
+  color: var(--ai-text-dim); font-size: 12px; padding: 2px 5px; border-radius: 4px;
+}
+.sp-close:hover { background: var(--ai-hover); color: var(--ai-text); }
+.sp-row { margin-bottom: 6px; }
+.sp-input {
+  flex: 1 1 auto; min-width: 0; background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border); border-radius: 4px; padding: 4px 6px; font-size: 12px;
+}
+.sp-input:focus { outline: none; border-color: var(--ai-accent); }
+/* Colour fields render the app's picker chip (see .ap-color), not a native input. */
+.sp-color { flex: 0 0 auto; margin-left: auto; }
+.sp-check { width: 16px; height: 16px; accent-color: var(--ai-accent); cursor: pointer; }
+/* Palette editor: a swatch grid - each chip opens the app picker, the corner mark
+   drops it, + appends one. (Replaced a comma-separated hex text field.) */
+.sp-palette { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.sp-swatch { position: relative; width: 26px; height: 26px; }
+.sp-swatch-btn {
+  width: 100%; height: 100%; border-radius: 5px; cursor: pointer; padding: 0;
+  border: 1px solid var(--ai-border-light); box-sizing: border-box;
+}
+.sp-swatch-btn:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 1px; }
+.sp-swatch-x {
+  position: absolute; top: -5px; right: -5px; width: 15px; height: 15px;
+  display: none; place-items: center; padding: 0; cursor: pointer;
+  border-radius: 50%; border: 1px solid var(--ai-border-light);
+  background: var(--ai-panel); color: var(--ai-text); font-size: 9px; line-height: 1;
+}
+.sp-swatch:hover .sp-swatch-x, .sp-swatch-x:focus-visible { display: grid; }
+.sp-swatch-add {
+  width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font-size: 15px;
+  line-height: 1; padding: 0; background: var(--ai-input); color: var(--ai-text-dim);
+  border: 1px dashed var(--ai-border-light); box-sizing: border-box;
+}
+.sp-swatch-add:hover { color: var(--ai-text); border-color: var(--ai-accent); }
+.sp-swatch-add:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 1px; }
+
+/* Linked-file chip in the Layers row: click-through to the source, with the same
+   status language the Library uses (none = current, arrow-down = newer available). */
+.layer-link-chip {
+  flex: 0 0 auto; width: 18px; height: 18px; margin-left: 4px;
+  display: grid; place-items: center; padding: 0; cursor: pointer;
+  background: transparent; border: 1px solid var(--ai-border-light);
+  border-radius: 4px; color: var(--ai-text-dim); font-size: 10px; line-height: 1;
+}
+.layer-link-chip:hover { color: var(--ai-text); border-color: var(--ai-accent); }
+.layer-link-chip:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 1px; }
+.layer-link-chip.stale { background: #3a2f12; color: #e0a53a; border-color: #5a4a1e; }
+.layer-link-chip.missing { background: #3a1a1a; color: #e08080; border-color: #5a2a2a; }
+
+/* A just-created asset pulses once so the eye lands on it (it also opens in rename). */
+@keyframes lib-row-new-flash { from { background: var(--ai-accent-dim, #3a5ad4); } to { background: transparent; } }
+.lib-row-new { animation: lib-row-new-flash 1.2s ease-out; }
+
+/* The pattern editor points at the Library instead of duplicating its browser. */
+.pat-lib-link { margin-bottom: 8px; }
+.pat-lib-link-btn {
+  width: 100%; padding: 6px 10px; cursor: pointer; font-size: 12px; text-align: left;
+  border-radius: 5px; background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border-light);
+}
+.pat-lib-link-btn::after { content: ' →'; opacity: 0.6; }
+.pat-lib-link-btn:hover { border-color: var(--ai-accent); }
+.pat-lib-link-btn:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 1px; }
+
+/* Artwork-tile preview: shows real repeats with one tile outlined, so seams and
+   stagger are visible instead of guessed at. */
+.pat-tile-preview { height: 92px; border-radius: 5px; overflow: hidden; border: 1px solid var(--ai-border); }
+
+/* The gradient/pattern editor mounted from the Fills panel's own component. */
+.sp-paint-editor { margin: 4px 0 8px; }
+.sp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.sp-btn {
+  width: 100%; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  background: var(--ai-input); color: var(--ai-text);
+  border: 1px solid var(--ai-border); border-radius: 5px;
+}
+.sp-btn:hover:not(:disabled) { background: var(--ai-hover); }
+.sp-btn:disabled { opacity: 0.45; cursor: default; }
+.sp-btn-primary { background: var(--ai-accent); border-color: var(--ai-accent); color: #fff; }
+.sp-btn-primary:hover:not(:disabled) { filter: brightness(1.1); background: var(--ai-accent); }
+/* The library row currently open in the Style panel. */
+.lib-row-focused { box-shadow: inset 0 0 0 1px var(--ai-accent); border-radius: 6px; }
+
+/* Property-editor fields (fieldsDialog): a checkbox stays its natural size, and a
+   colour input renders as a compact swatch rather than a full-width text box. */
+/* ---- Image Trace dialog ------------------------------------------------
+   Preview beside controls: tracing is unpredictable enough (6 shapes or 3,000,
+   depending on colour count) that settings alone are guesswork, so the result is
+   shown at thumbnail size and re-traced on every change. */
+/* .dlg sets a fixed 400px width and .dlg-body a column — both need out-ranking,
+   not just repeating, so these carry an extra class. */
+.dlg.dlg-trace { width: 720px; }
+.dlg-trace .dlg-trace-body { flex-direction: row; gap: 18px; align-items: flex-start; }
+.dlg-trace-preview { flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px; }
+.dlg-trace-canvas {
+  width: 260px; height: 260px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--ai-border-light);
+  border-radius: 6px;
+  /* Checkerboard so traced transparency reads as transparent, not white. */
+  background-color: #2a2d34;
+  background-image:
+    linear-gradient(45deg, #23262c 25%, transparent 25%, transparent 75%, #23262c 75%),
+    linear-gradient(45deg, #23262c 25%, transparent 25%, transparent 75%, #23262c 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  overflow: hidden;
+}
+.dlg-trace-canvas svg { width: 100%; height: 100%; }
+.dlg-trace-status { font-size: 12px; color: var(--ai-text-dim); min-height: 2.4em; }
+.dlg-trace-status.is-warn { color: #f0c040; }
+.dlg-trace-controls { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 13px; }
+/* Three modes, so the shared two-column segment would wrap 2+1. One per row
+   keeps them even and leaves each hint room to sit on a single line. */
+.dlg-trace .dlg-seg { grid-template-columns: 1fr; }
+.dlg-trace .dlg-seg-btn { flex-direction: row; align-items: baseline; gap: 8px; padding: 8px 12px; }
+.dlg-trace-slider { display: flex; align-items: center; gap: 10px; }
+.dlg-trace-slider input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.dlg-trace-replace {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 3px; font-size: 13px; color: var(--ai-text); cursor: pointer;
+}
+.dlg-trace-replace .dlg-check { flex: none; }
+.dlg-trace-slider .slider-field-input { width: 44px; height: 24px; font-size: 12px; }
+/* A word for the value ("Balanced") after its field; empty rows keep the width so
+   the fields line up. */
+.dlg-trace-value {
+  flex: none; min-width: 58px;
+  font-size: 12px; color: var(--ai-text-dim);
+}
+/* Below the dialog's own width the two columns can't both fit — stack them. */
+@media (max-width: 780px) {
+  .dlg-trace .dlg-trace-body { flex-direction: column; }
+  .dlg-trace-preview { flex: none; align-self: center; }
+}
+
+/* Round Corners previews on the real artwork, so the dialog must not sit on top of
+   it: park it at the bottom of the screen and dim the backdrop less than usual,
+   the way a modeless adjustment panel would. */
+#round-corners-dialog { align-items: flex-end; background: rgba(0, 0, 0, 0.25); }
+#round-corners-dialog .modal-dialog { margin-bottom: 64px; }
+/* Round Corners: one slider row, its value field typeable like every other. */
+.dlg-corners-slider { display: flex; align-items: center; gap: 10px; }
+.dlg-corners-slider input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--ai-accent); }
+.dlg-corners-slider .slider-field-input { width: 52px; height: 24px; font-size: 12px; }
+
+.dlg-check { width: 18px; height: 18px; accent-color: var(--ai-accent); cursor: pointer; }
+.dlg-input[type="color"] { width: 56px; height: 30px; padding: 2px; cursor: pointer; }
+/* Category row: the text input plus a colour swatch for the category's colour. */
+.dlg-cat-row { display: flex; align-items: center; gap: 8px; }
+.dlg-cat-row .dlg-input { flex: 1 1 auto; }
+.dlg-cat-swatch {
+  flex: 0 0 auto; width: 36px; height: 36px; padding: 0;
+  background: var(--ai-input); border: 1px solid var(--ai-border-light);
+  border-radius: 8px; cursor: pointer;
+}
+.dlg-cat-swatch::-webkit-color-swatch-wrapper { padding: 4px; }
+.dlg-cat-swatch::-webkit-color-swatch { border: none; border-radius: 5px; }
+.dlg-cat-swatch:disabled { opacity: 0.4; cursor: default; }
+.dlg-input {
+  height: 36px; padding: 0 12px;
+  font-size: 13px;
+  background: var(--ai-input); color: var(--ai-text-bright);
+  border: 1px solid var(--ai-border-light); border-radius: 8px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.dlg-input:focus {
+  outline: none;
+  border-color: var(--ai-accent);
+  box-shadow: 0 0 0 3px rgba(77,124,254,0.22);
+}
+.dlg-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.dlg-seg-btn {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 9px 12px; text-align: left;
+  border: 1px solid var(--ai-border-light); border-radius: 9px;
+  background: var(--ai-input); color: var(--ai-text-dim);
+  cursor: pointer; transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.dlg-seg-btn:hover { border-color: var(--ai-text-dim); }
+.dlg-seg-btn.active { border-color: var(--ai-accent); background: rgba(77,124,254,0.12); color: var(--ai-text-bright); }
+.dlg-seg-label { font-size: 13px; font-weight: 600; }
+.dlg-seg-hint { font-size: 11px; color: var(--ai-text-dim); }
+.dlg-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 16px 22px 20px;
+}
+.dlg-btn {
+  height: 34px; padding: 0 16px;
+  font-size: 13px; font-weight: 550;
+  border-radius: 8px; cursor: pointer;
+  background: var(--ai-btn); color: var(--ai-text);
+  border: 1px solid transparent;
+  transition: background 0.12s, color 0.12s;
+}
+.dlg-btn:hover { background: var(--ai-btn-hover); color: var(--ai-text-bright); }
+.dlg-btn-primary { background: var(--ai-accent); color: #fff; }
+.dlg-btn-primary:hover { background: #5d89ff; color: #fff; }
+.dlg-btn-danger { background: var(--ai-danger); color: #fff; }
+.dlg-btn-danger:hover { background: #ff6a61; color: #fff; }
+
+/* Offset Path dialog */
+.offset-dialog { width: 300px; }
+.offset-dialog-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.offset-dialog-title { font-size: 14px; font-weight: 600; color: var(--ai-text, #eee); }
+.offset-dialog-label { font-size: 11px; color: var(--ai-text-dim, #999); }
+.offset-dialog-input {
+  height: 30px; padding: 0 8px; font-size: 13px;
+  background: var(--ai-input, #1e1e1e); color: var(--ai-text, #ddd);
+  border: 1px solid var(--ai-border, #4a4a4a); border-radius: 4px;
+}
+.offset-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.offset-btn {
+  padding: 6px 14px; font-size: 12px; border-radius: 4px; cursor: pointer;
+  background: transparent; color: var(--ai-text, #ddd); border: 1px solid var(--ai-border, #4a4a4a);
+}
+.offset-btn-primary { background: var(--ai-accent); border-color: var(--ai-accent); color: #fff; }
+
+/* Custom tooltips (ui/tooltip.ts) */
+.tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 260px;
+  padding: 5px 9px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #fff;
+  background: #111;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  pointer-events: none;
+  white-space: normal;
+}
+.tooltip[hidden] { display: none; }
+
+/* Per-frame quick-export button in the Layers panel */
+.layer-export {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent;
+  color: var(--ai-text-dim); cursor: pointer; border-radius: 3px;
+  opacity: 0; transition: opacity 0.1s;
+}
+.layer-item:hover .layer-export { opacity: 0.75; }
+.layer-export:hover { opacity: 1; background: var(--ai-btn-hover); color: var(--ai-text); }
+
+/* Swatches panel (reusable colour palette) */
+.swatches-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.swatch-chip {
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  border: 1px solid var(--ai-border, #444);
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+}
+.swatch-chip:hover {
+  outline: 2px solid var(--ai-accent);
+  outline-offset: 1px;
+}
+
+/* ============================================================
+   Interaction feedback — a unified, tasteful response layer for
+   every design-system control: smooth transitions, a tactile press,
+   keyboard focus rings, and a "something happened" pulse. Appended
+   last so it standardizes the motion of controls defined above.
+   Motion is disabled under prefers-reduced-motion (see end).
+   ============================================================ */
+:root {
+  --fx-fast: 90ms;
+  --fx: 150ms;
+  --fx-ease: cubic-bezier(0.2, 0, 0, 1); /* snappy ease-out */
+  --fx-accent-flash: rgba(33, 150, 243, 0.32);
+}
+
+/* Compact / icon / segmented buttons + swatches: consistent transitions and a
+   subtle spring-press on click for tactility. */
+.btn, .tool-btn, .btn-group button, .align-buttons button, .panel-add,
+.panel-collapse, .appearance-toggle, .appearance-color-btn,
+.swatch-swap, .swatch-default, .swatch-fill, .swatch-stroke,
+.pathfinder-buttons button, .ctx-popover button, .cloud-seg, .dlg-seg-btn,
+.width-preset, .symbol-place-btn, .layer-vis, .layer-lock, .layer-export,
+.ap-vis, .ap-del, .layer-export, #tab-new, .doc-tab-close {
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease),
+              border-color var(--fx) var(--fx-ease), box-shadow var(--fx) var(--fx-ease),
+              opacity var(--fx) var(--fx-ease), transform var(--fx-fast) var(--fx-ease);
+}
+/* (panel-collapse is intentionally absent — it conveys state via
+   transform: rotate, which a scale-press would fight.) */
+.btn:active, .btn-group button:active, .align-buttons button:active,
+.panel-add:active,
+.appearance-toggle:active, .appearance-color-btn:active, .swatch-swap:active,
+.swatch-default:active,
+.pathfinder-buttons button:active, .ctx-popover button:active, .cloud-seg:active,
+.dlg-seg-btn:active, .width-preset:active, .symbol-place-btn:active, .layer-vis:active,
+.layer-lock:active, .layer-export:active, .ap-vis:active, .ap-del:active,
+#tab-new:active, .doc-tab-close:active {
+  transform: scale(0.92);
+}
+/* Toolbar items live in a horizontal scroll container, where a transform-press
+   nudges the scroll and drops the click. Press them with brightness (no geometry
+   change) instead so the click always lands. */
+.tool-btn:active, .swatch-fill:active, .swatch-stroke:active {
+  filter: brightness(0.88);
+}
+
+/* Rows / list items: full-width, so a scale looks wrong — flash the background
+   brighter on press instead. */
+.menu-panel button, .cmdk-item, .layer-item, .check-row,
+.account-popover-item, .doc-tab, .legal-tab {
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease),
+              filter var(--fx-fast) var(--fx-ease);
+}
+.menu-panel button:active, .cmdk-item:active, .layer-item:active, .check-row:active,
+.account-popover-item:active, .doc-tab:active {
+  filter: brightness(1.16);
+}
+
+/* "Something happened" confirmation for action/toggle buttons — a quick accent
+   wash that fades out, driven by ui/feedback.ts on click. Self-contained (inset
+   shadow), so it works over any base background and respects border-radius. */
+@keyframes fx-pulse {
+  0%   { box-shadow: inset 0 0 0 100px var(--fx-accent-flash); }
+  100% { box-shadow: inset 0 0 0 100px rgba(33, 150, 243, 0); }
+}
+.fx-pulse { animation: fx-pulse 0.4s var(--fx-ease); }
+
+/* Keyboard focus: a clear accent ring (only shows for keyboard users). */
+button:focus-visible, .tool-btn:focus-visible, .doc-tab:focus-visible,
+.layer-item:focus-visible, .swatch-fill:focus-visible, .swatch-stroke:focus-visible,
+input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--ai-accent);
+  outline-offset: 1px;
+}
+
+/* Numeric fields: a steady accent ring while actively scrubbing, and a soft
+   ring flash on commit (scrub release / Enter / arrow nudge) — see feedback.ts
+   and number-scrub.ts. Uses box-shadow so it never shifts layout. */
+input.fx-scrubbing {
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.35);
+  border-color: var(--ai-accent);
+}
+@keyframes fx-field-flash {
+  0%   { box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.5); }
+  100% { box-shadow: 0 0 0 2px rgba(33, 150, 243, 0); }
+}
+.fx-field-flash { animation: fx-field-flash 0.45s var(--fx-ease); }
+
+/* Panel expand: a gentle reveal of the body (the collapse chevron already eases
+   its rotation via the transition layer above). Collapse stays instant. */
+@keyframes fx-panel-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.panel-body.fx-expanding { animation: fx-panel-expand var(--fx) var(--fx-ease); }
+
+/* Layer rows: when a shape is newly added (draw / paste / duplicate — marked by
+   layers.ts via an id diff, so it never replays on scroll or re-render) the row
+   slides in and washes with accent that lingers and fades — a clear "here's your
+   new layer" highlight, echoing the toolbar/action-button pulse. The inset shadow
+   sits behind the row's text/icons, so it reads as the row glowing. */
+@keyframes fx-row-enter {
+  0%   { opacity: 0; transform: translateX(-10px); box-shadow: inset 0 0 0 999px rgba(33, 150, 243, 0.55); }
+  40%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 1; transform: translateX(0); box-shadow: inset 0 0 0 999px rgba(33, 150, 243, 0); }
+}
+.layer-item.fx-enter { animation: fx-row-enter 0.6s var(--fx-ease); }
+
+/* Floating menus pop into place: a quick scale+fade with a hint of spring, so
+   opening reads as a response to the click rather than an appearance. Context
+   menus grow from the corner nearest the cursor (transform-origin is set inline
+   by showContextMenu, flipping when the menu is nudged back into the viewport). The contextual
+   bars over a selection have their own entrance (.ctx-popover). */
+@keyframes fx-menu-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.context-menu {
+  animation: fx-menu-in 130ms cubic-bezier(0.34, 1.3, 0.5, 1);
+}
+
+/* Menu-bar dropdowns get a subtler, faster slide-down (they open on hover-slide
+   between adjacent menus, so a scale pop would read as jitter). The animation
+   sits on the .open state, replaying each time the panel is shown. */
+@keyframes fx-dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.menu-dropdown.open .menu-panel {
+  animation: fx-dropdown-in 110ms var(--fx-ease);
+}
+
+/* Disclosure chevrons (panel header, stroke options) turn on a longer,
+   slightly-overshooting curve so the expand/collapse reads as a deliberate,
+   satisfying rotation — the snappy press timing was too quick to perceive on
+   such a small glyph. Overrides the transform transition from the layer above. */
+.panel-collapse {
+  transition: transform 260ms cubic-bezier(0.34, 1.45, 0.5, 1),
+              color var(--fx) var(--fx-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  *:active { transform: none !important; }
+}
+
+/* Library paint-style preview — a solid colour swatch (ui/library-adapters.ts).
+   The text-style preview shows glyphs, so it needs no box; a paint swatch has no
+   content and must be given an explicit size to render. */
+.lib-preview-paint {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid var(--ai-border-light);
+  box-sizing: border-box;
+  vertical-align: middle;
+  overflow: hidden; /* clip the gradient/pattern swatch to the rounded box */
+}
+/* Gradient/pattern paint swatches render a real def in an inline <svg>. */
+.lib-preview-paint > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Component preview — the symbol content, contained within the box. */
+.lib-preview-component > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Effect-style preview — a light chip carrying the actual (clamped) blur/shadow. */
+.lib-preview-effect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+.lib-preview-effect-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--ai-text, #e6e8ec);
+}
+
+/* ---- Shapes library picker (ui/shape-picker.ts) ------------------------------ */
+.shape-picker[hidden] { display: none; } /* beat the UA rule that .shape-picker's display would override */
+.shape-picker {
+  position: fixed;
+  z-index: 70;
+  width: 300px;
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.shape-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  background: var(--ai-input);
+  border: 1px solid var(--ai-border-light);
+  border-radius: 6px;
+  color: var(--ai-text);
+  font-size: 12px;
+}
+.shape-search:focus { outline: none; border-color: var(--ai-accent); }
+.shape-grid { overflow-y: auto; overflow-x: hidden; }
+.shape-cat {
+  margin: 8px 2px 5px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ai-text-dim);
+}
+.shape-cat:first-child { margin-top: 0; }
+.shape-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.shape-item {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ai-text-dim);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.shape-item svg { width: 100%; height: 100%; display: block; }
+.shape-item:hover {
+  background: var(--ai-btn-hover);
+  border-color: var(--ai-border-light);
+  color: var(--ai-text-bright);
+}
+.shape-empty { padding: 12px; text-align: center; color: var(--ai-text-dim); font-size: 12px; }
+#shapes-lib-btn.active { background: var(--ai-btn-hover); color: var(--ai-text-bright); }
+
+/* ---- File drag-and-drop zones (ui/file-drop.ts) -----------------------------
+   Two zones, two outcomes: the canvas appends to the open document, the tab bar
+   opens a new one. Each states its own outcome while you drag, so the choice is
+   made by where you are rather than by a dialog after the fact. */
+#tab-bar { position: relative; } /* anchor for the tab-bar overlay */
+
+.filedrop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* never intercept the drag itself */
+  background: color-mix(in srgb, var(--ai-accent) 14%, transparent);
+  border: 2px dashed var(--ai-accent);
+  border-radius: 4px;
+}
+.filedrop-overlay.is-on { display: flex; }
+.filedrop-overlay.is-reject {
+  background: color-mix(in srgb, #e0574a 16%, transparent);
+  border-color: #e0574a;
+}
+
+.filedrop-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 90%;
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--ai-panel);
+  border: 1px solid var(--ai-border-light);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.45);
+  color: var(--ai-text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.filedrop-icon { display: flex; color: var(--ai-accent); }
+.filedrop-overlay.is-reject .filedrop-icon { color: #e0574a; }
+/* A "maybe" reads as neutral — neither the accent-coloured invite of a file we
+   know we can open, nor the red refusal of one we know we can't. */
+.filedrop-overlay.is-maybe {
+  background: color-mix(in srgb, var(--ai-text-dim) 12%, transparent);
+  border-color: var(--ai-text-dim);
+}
+.filedrop-overlay.is-maybe .filedrop-icon { color: var(--ai-text-dim); }
+.filedrop-title { font-weight: 600; }
+.filedrop-hint { color: var(--ai-text-dim); font-size: 12px; }
+
+/* The canvas has room to stack the label; the tab bar is one short row, so it
+   keeps everything on a single line and drops the secondary hint. */
+.filedrop-canvas .filedrop-card { flex-direction: column; gap: 4px; padding: 18px 26px; }
+.filedrop-canvas .filedrop-title { font-size: 15px; }
+.filedrop-tabbar { border-radius: 0; }
+.filedrop-tabbar .filedrop-card { padding: 4px 12px; font-size: 12px; }
+.filedrop-tabbar .filedrop-hint { display: none; }
+
+/* Text stroke hint (#172) — shown in a stroke row when the selection is live text
+   with no fill, where the stroke traces each glyph's internal seams. Stacks the
+   explanation above the one-click remedy so the button reads as the answer to it. */
+.ap-text-stroke-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--ai-panel-dark);
+  border: 1px solid var(--ai-border);
+}
+.ap-text-stroke-hint .ap-hint { margin-left: 0; line-height: 1.4; white-space: normal; }
+
+/* --- Google Drive (ui/drive.ts) ------------------------------------------- */
+/* Status chip in the top-right chrome cluster, after the Discord link. Hidden
+   unless it has something to say; only the "reconnect" state is clickable. */
+.drive-status {
+  border: none; background: transparent; font: inherit; font-size: 11px;
+  color: var(--ai-text-dim); white-space: nowrap; padding: 0;
+  opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+}
+.drive-status.show { opacity: 1; }
+.drive-status.saved { color: #4caf50; }
+.drive-status.error { color: var(--ai-danger); }
+.drive-status.reconnect { color: var(--ai-accent); pointer-events: auto; cursor: pointer; text-decoration: underline; }
+.doc-tab .doc-tab-badge.drive { color: var(--ai-accent); }
+.doc-tab.active .doc-tab-badge.drive { color: var(--ai-accent); }

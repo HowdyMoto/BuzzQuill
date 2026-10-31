@@ -1,0 +1,194 @@
+{
+  "destDir": "test/fixtures/svg",
+  "files": [
+    {
+      "file": "gradient-linear-transform.svg",
+      "focus": "linearGradient + gradientTransform",
+      "expect": {}
+    },
+    {
+      "file": "gradient-radial-focal.svg",
+      "focus": "radialGradient with focal point (fx/fy/fr)",
+      "expect": {}
+    },
+    {
+      "file": "pattern-nested-transform.svg",
+      "focus": "pattern referencing pattern + patternTransform",
+      "expect": {}
+    },
+    {
+      "file": "mesh-gradient.svg",
+      "focus": "SVG2 meshgradient (Inkscape) — round-trip of an unusual def",
+      "expect": {}
+    },
+    {
+      "file": "paint-currentcolor.svg",
+      "focus": "currentColor inheritance",
+      "expect": {}
+    },
+    {
+      "file": "paint-order.svg",
+      "focus": "paint-order: stroke fill",
+      "expect": {}
+    },
+    {
+      "file": "text-on-path.svg",
+      "focus": "textPath referencing a path",
+      "expect": {
+        "refsAllResolve": true
+      }
+    },
+    {
+      "file": "text-tspan-positioning.svg",
+      "focus": "tspan dx/dy/rotate per-glyph",
+      "expect": {}
+    },
+    {
+      "file": "text-rtl-bidi.svg",
+      "focus": "RTL / bidi text round-trip",
+      "expect": {}
+    },
+    {
+      "file": "text-nbsp.svg",
+      "focus": "non-breaking space (U+00A0) round-trips as valid XML",
+      "expect": {}
+    },
+    {
+      "file": "text-vertical-cjk.svg",
+      "focus": "vertical writing-mode + CJK",
+      "expect": {}
+    },
+    {
+      "file": "filter-primitives.svg",
+      "focus": "feColorMatrix/feOffset/feFlood/feMerge/feComposite",
+      "expect": {}
+    },
+    {
+      "file": "filter-turbulence-displace.svg",
+      "focus": "feTurbulence + feDisplacementMap",
+      "expect": {}
+    },
+    {
+      "file": "filter-dropshadow.svg",
+      "focus": "feDropShadow shorthand primitive",
+      "expect": {}
+    },
+    {
+      "file": "markers-arrowheads.svg",
+      "focus": "marker-start/mid/end",
+      "expect": {}
+    },
+    {
+      "file": "use-chain.svg",
+      "focus": "use -> use -> shape reference chain",
+      "expect": {
+        "refsAllResolve": true
+      }
+    },
+    {
+      "file": "use-symbol-viewbox.svg",
+      "focus": "symbol with viewBox + use sizing",
+      "expect": {
+        "refsAllResolve": true
+      }
+    },
+    {
+      "file": "nested-svg-viewbox.svg",
+      "focus": "inner <svg> with its own viewBox",
+      "expect": {}
+    },
+    {
+      "file": "image-svg-datauri.svg",
+      "focus": "<image> of an SVG data URI",
+      "expect": {}
+    },
+    {
+      "file": "clippath-mask-combo.svg",
+      "focus": "clipPath + mask on the same element",
+      "expect": {}
+    },
+    {
+      "file": "css-stylesheet-only.svg",
+      "focus": "styling only via <style> classes (no inline)",
+      "expect": {
+        "effectiveFill": {
+          "id": "r",
+          "value": "rgb(0, 102, 204)"
+        }
+      }
+    },
+    {
+      "file": "css-class-vs-inline.svg",
+      "focus": "inline style must beat a competing class rule",
+      "expect": {
+        "effectiveFill": {
+          "id": "r",
+          "value": "rgb(0, 128, 0)"
+        }
+      }
+    },
+    {
+      "file": "entity-expansion-bounded.svg",
+      "focus": "nested DTD entity expansion stays bounded",
+      "expect": {
+        "maxElements": 50,
+        "parserMayReject": true
+      }
+    },
+    {
+      "file": "use-self-reference.svg",
+      "focus": "self-referential <use> must not hang",
+      "expect": {}
+    },
+    {
+      "file": "broken-references.svg",
+      "focus": "dangling url(#…) / href refs do not crash",
+      "expect": {}
+    },
+    {
+      "file": "duplicate-ids.svg",
+      "focus": "duplicate element ids do not crash import",
+      "expect": {}
+    },
+    {
+      "file": "deep-nesting.svg",
+      "focus": "400-deep nested groups (recursion safety)",
+      "expect": {}
+    },
+    {
+      "file": "huge-single-path.svg",
+      "focus": "one path with ~8k vertices",
+      "expect": {}
+    },
+    {
+      "file": "smil-animation.svg",
+      "focus": "SMIL animation is stripped, static art survives",
+      "expect": {
+        "strippedTags": [
+          "animate",
+          "animatetransform"
+        ]
+      }
+    },
+    {
+      "file": "foreignobject-content.svg",
+      "focus": "foreignObject visible content is stripped (known limitation)",
+      "expect": {
+        "strippedTags": [
+          "foreignobject"
+        ],
+        "rendersBlank": true,
+        "knownIssue": "foreignObject is the only content; stripped for security → renders blank"
+      }
+    },
+    {
+      "file": "security-injection.svg",
+      "focus": "scripts, event handlers, javascript: hrefs are stripped",
+      "expect": {
+        "noScript": true,
+        "noOnHandlers": true,
+        "noJavascriptHrefs": true
+      }
+    }
+  ]
+}

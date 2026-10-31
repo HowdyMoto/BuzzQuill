@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!--
+    Defense-in-depth against malicious imported SVGs. The import pipeline strips
+    event handlers / unsafe refs (see core/svg-sanitize.ts); this CSP is the
+    backstop: no external/inline scripts, and images/connections limited so a
+    crafted file can't beacon out. 'unsafe-inline' is allowed for styles only
+    (the editor sets inline styles extensively); ws: keeps Vite HMR working.
+    The app runs no server (#182); the one third party is Google Drive, whose
+    hosts (sign-in + Picker scripts, the Picker iframe, googleapis.com) are added
+    only in a build with the Drive env vars set — see buildCsp in vite.config.ts.
+
+    The meta tag below is INJECTED by vite.config.ts (cspPlugin) so the policy
+    can differ by mode: production drops Vite's HMR `ws:`/`wss:` wildcards and the
+    unused `blob:`/`data:` in connect-src, leaving `self` (+ Google when Drive is on). The
+    production deploy ALSO sets the same policy as a real HTTP header via
+    public/_headers (which can add frame-ancestors / nosniff that meta can't).
+  -->
+  <!-- INJECT_CSP -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Title carries the primary keyword ("SVG editor") — the top on-page SEO
+       signal; matches og:title. Canonical + robots keep crawlers on one URL. -->
+  <title>BuzzQuill — browser-based SVG editor</title>
+  <link rel="canonical" href="https://buzzquill.app/" />
+  <meta name="robots" content="index, follow" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48x48.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#282828" />
+  <meta name="application-name" content="BuzzQuill" />
+  <meta name="description" content="A browser-based SVG editor for drawing, editing and exporting vector graphics." />
+
+  <!-- Open Graph / Twitter — social-share preview card -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BuzzQuill" />
+  <meta property="og:title" content="BuzzQuill — browser-based SVG editor" />
+  <meta property="og:description" content="A browser-based SVG editor for drawing, editing and exporting vector graphics." />
+  <meta property="og:url" content="https://buzzquill.app/" />
+  <!-- og-card.png is a purpose-built 1200×630 (1.91:1) share card — the square
+       logo.png got blown up and cropped by Facebook/LinkedIn/Slack. Width/height
+       hints let scrapers render the card correctly on the FIRST share (no
+       re-scrape needed); summary_large_image opts Twitter/X into the big card. -->
+  <meta property="og:image" content="https://buzzquill.app/og-card.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="BuzzQuill — a free vector design tool in your browser" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BuzzQuill — browser-based SVG editor" />
+  <meta name="twitter:description" content="A browser-based SVG editor for drawing, editing and exporting vector graphics." />
+  <meta name="twitter:image" content="https://buzzquill.app/og-card.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BuzzQuill" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+</head>
+<body>
+  <div id="app">
+    <!-- Menu Bar -->
+    <header id="menu-bar">
+      <!-- The menu bar is rendered from the command registry (MENU_BAR + COMMANDS)
+           by ui/menus.ts — labels/shortcuts live only in commands.ts (#123). -->
+      <nav class="menu-items"></nav>
+      <!-- Right-aligned app chrome: community. (Split view is a View-menu
+           toggle now — Mod+\ — so it's not a bare icon up here.) -->
+      <div id="menu-chrome">
+        <div id="chrome-actions">
+          <!-- Community / help & feedback — a deliberate, always-visible affordance,
+               not a buried menu item (issue #104). -->
+          <a id="discord-link" href="https://discord.gg/2M4HYxqDG3" target="_blank" rel="noopener noreferrer"
+             title="Join our Discord — get help &amp; share feedback">
+            <span class="discord-link-icon"><svg viewBox="0 0 127.14 96.36" width="15" height="15" aria-hidden="true" focusable="false"><path fill="currentColor" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0a105.89 105.89 0 0 0-26.25 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53s5-12.74 11.43-12.74S54 46 53.89 53s-5.05 12.69-11.44 12.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53s5-12.74 11.44-12.74S96.23 46 96.12 53s-5.04 12.69-11.43 12.69Z"/></svg></span>
+            <span class="discord-link-text">Discord</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Control/Options Bar -->
+    <div id="workspace">
+      <!-- Document tabs (Figma/browser-style): a strip directly above the canvas, so
+           the side docks (Layers/Library, inspector) run full height up to the menu
+           bar. Hidden in split view, where per-pane strips take over. -->
+      <div id="tab-bar">
+        <div id="tab-list"></div>
+        <button id="tab-new" title="New document" aria-label="New document">&#x2b;</button>
+      </div>
+
+      <!-- Left panel (Figma-style): Layers, full height -->
+      <aside id="left-panel">
+        <div class="panel" id="panel-layers">
+          <div class="panel-header">
+            <span>Layers</span>
+            <button class="panel-add" id="btn-layer-add" title="Add layer or frame">&#x2b;</button>
+            <button class="panel-collapse" aria-label="Collapse Layers">&#x25BC;</button>
+          </div>
+          <div class="panel-body panel-body-layers">
+            <ul id="layers-list"></ul>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Tool bar (Figma-style): floating along the bottom -->
+      <aside id="toolbar">
+        <div class="tool-section">
+          <button class="tool-btn active" data-tool="select" title="Selection Tool (V) — double-click a path to edit its points, a group to step inside, text to edit it; Ctrl/Alt-click selects a nested object directly">
+            <svg viewBox="0 0 24 24"><path d="M4 2l12 16-4.5-1.5L8 22V8L4 2z" fill="currentColor"/></svg>
+          </button>
+          <!-- Direct Selection (node editing) has no toolbar button — you enter it by
+               double-clicking a shape (Figma-style), or the `A` shortcut. The mode/tool
+               itself (NodeEditTool) still exists; only the redundant icon was removed. -->
+          <button class="tool-btn" data-tool="shapeBuilder" title="Shape Builder Tool (Shift+M) — select 2+ overlapping shapes, then drag to merge / Alt-click to delete">
+            <svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 7.2a6 6 0 0 1 0 9.6a6 6 0 0 1 0-9.6z" fill="currentColor" fill-opacity="0.5"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="rect" title="Rectangle Tool (M) — drag to draw; Shift for a square, Alt to draw from the center">
+            <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="ellipse" title="Ellipse Tool (L) — drag to draw; Shift for a circle, Alt to draw from the center">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="line" title="Line Tool (\) — drag to draw; Shift snaps to 45° angles">
+            <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="arrow" title="Arrow Tool — drag from the tail to the head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L19 5"/><path d="M13 5 L19 5 L19 11"/></svg>
+          </button>
+          <!-- Star & polygon moved to the Shapes library (parametric versions with
+               side/point handles); they're still reachable via the command palette.
+               Shapes library — opens a picker of ready-made parametric shapes (not a
+               drawing tool, so no data-tool; wired in ui/shape-picker.ts). -->
+          <button class="tool-btn" id="shapes-lib-btn" title="Shapes library — pie wedges, arcs, arrows & more">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="12.5" width="8" height="8" rx="1"/><circle cx="16.5" cy="7" r="4.5"/><path d="M12 20.5 L16 13.5 L20 20.5 Z"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="pen" title="Pen Tool (P) — click for straight points, drag for curves, Shift to constrain to h/v">
+            <svg viewBox="0 0 24 24"><path d="M12 2.5 L7 10.5 Q7 18.5 12 21 Q17 18.5 17 10.5 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M12 6.5 V12" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="direction" title="Direction Tool (R) — see which way every path runs; click one to reverse it">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="2" fill="currentColor"/><path d="M7.5 19H15a3.75 3.75 0 0 0 0-7.5H9A3.75 3.75 0 0 1 9 4h9.5"/><path d="M15.5 1 18.5 4l-3 3"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="text" title="Type Tool (T) — click to place text, or drag a box for text that wraps">
+            <svg viewBox="0 0 24 24"><text x="12" y="19" text-anchor="middle" font-size="18" font-weight="bold" fill="currentColor" font-family="serif">T</text></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-action="file.import" title="Import image…">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8.5" cy="8.5" r="2" fill="currentColor"/><path d="M3 17l5-5 3 3 4-5 6 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="eyedropper" title="Eyedropper Tool (I) — click an object to copy its look onto the selection; with nothing selected it sets the style for the next shape">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="frame" title="Frame Tool (Shift+O) — drag to draw a frame; shapes drawn inside it belong to it">
+            <!-- Hash (#) — the Figma frame symbol, matching the frame layer-type glyph
+                 in the Layers panel (getShapeIcon 'frame'). Keep the two in sync. -->
+            <svg viewBox="0 0 24 24"><path d="M8 2v20M16 2v20M2 8h20M2 16h20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-divider"></div>
+
+        <div class="tool-section">
+          <button class="tool-btn" data-tool="hand" title="Hand Tool (H, or hold Space) — drag to pan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v5"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="zoom" title="Zoom Tool (Z) — click to zoom in, Alt-click to zoom out">
+            <svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="14.5" y1="14.5" x2="20" y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-spacer"></div>
+
+        <!-- Fill/Stroke swatches at bottom of toolbar -->
+        <div class="toolbar-swatches">
+          <div class="swatch-stack">
+            <div class="swatch-fill" id="tb-fill-swatch" title="Fill Color">
+              <div class="swatch-inner"></div>
+            </div>
+            <div class="swatch-stroke" id="tb-stroke-swatch" title="Stroke Color">
+              <div class="swatch-inner"></div>
+            </div>
+          </div>
+          <div class="swatch-controls">
+            <button id="tb-swap" title="Swap Fill & Stroke (Shift+X)" class="swatch-swap">&#x21C4;</button>
+            <button id="tb-default" title="Default Fill & Stroke (D)" class="swatch-default">
+              <svg viewBox="0 0 18 18" width="12" height="12"><rect x="1" y="1" width="10" height="10" fill="white" stroke="black" stroke-width="1"/><rect x="7" y="7" width="10" height="10" fill="none" stroke="black" stroke-width="2"/></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Per-pane tab strips (split view only): each editor group's own row of tabs,
+           sitting directly above its canvas. Hidden until the workspace is split;
+           filled/driven by ui/tab-bar.ts. -->
+      <div id="tabs-group-0" class="pane-tabs" data-group="0" hidden>
+        <div class="pane-tab-list"></div>
+        <button class="pane-tab-new" data-group="0" title="New document in this pane" aria-label="New document">&#x2b;</button>
+      </div>
+      <div id="tabs-group-1" class="pane-tabs" data-group="1" hidden>
+        <div class="pane-tab-list"></div>
+        <button class="pane-tab-new" data-group="1" title="New document in this pane" aria-label="New document">&#x2b;</button>
+      </div>
+
+      <!-- Canvas Area -->
+      <main id="canvas-area">
+        <svg id="svg-canvas" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid-small" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e8e8e8" stroke-width="0.3"/>
+            </pattern>
+            <pattern id="grid-large" width="100" height="100" patternUnits="userSpaceOnUse">
+              <rect width="100" height="100" fill="url(#grid-small)"/>
+              <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#d0d0d0" stroke-width="0.5"/>
+            </pattern>
+            <pattern id="transparency-check" width="16" height="16" patternUnits="userSpaceOnUse">
+              <rect width="16" height="16" fill="#ffffff"/>
+              <rect width="8" height="8" fill="#e0e0e0"/>
+              <rect x="8" y="8" width="8" height="8" fill="#e0e0e0"/>
+            </pattern>
+          </defs>
+          <!-- Pasteboard (dark area outside artboard) -->
+          <rect id="pasteboard" x="-10000" y="-10000" width="20000" height="20000" fill="#2c2f36"/>
+          <!-- Artboard backgrounds rendered dynamically -->
+          <g id="artboards-layer"></g>
+          <!-- Drawing content -->
+          <g id="drawing-layer"></g>
+          <!-- Shape Builder face overlay (owned by ShapeBuilderTool; empty otherwise) -->
+          <g id="shapebuilder-layer" pointer-events="none"></g>
+          <!-- Artboard labels & handles rendered dynamically -->
+          <g id="artboard-labels-layer"></g>
+          <g id="artboard-handles-layer"></g>
+          <!-- Guides & selection overlays -->
+          <g id="guides-layer"></g>
+          <g id="direction-layer" pointer-events="none"></g>
+          <g id="selection-layer"></g>
+        </svg>
+        <!-- What the active tool can do right now (ui/tool-hint.ts): the one strip every
+             tool's hints render into — and, during a drag, the gesture's modifier
+             chips (ui/gesture-hud.ts) in its bold .gesturing style. -->
+        <div id="tool-hint" class="tool-hint" hidden></div>
+      </main>
+
+      <!-- Draggable divider between the two editor groups (split view only). -->
+      <div id="split-gutter" role="separator" aria-orientation="vertical" aria-label="Resize panes" hidden></div>
+
+      <!-- Split-view second pane: the non-focused editor group's canvas, shown as a
+           snapshot of its document. Its tab row lives in #tabs-group-0/1 above it.
+           Click it to make that group live (the two swap). Driven by ui/split-view.ts. -->
+      <section id="split-preview" aria-label="Second document" hidden>
+        <div class="split-preview-body"></div>
+      </section>
+
+      <!-- Right Panels -->
+      <aside id="panels">
+        <!-- Selection header: name + type of the current selection (or "Canvas") -->
+        <div id="inspector-header">
+          <input id="inspector-name" class="inspector-name" type="text" spellcheck="false" title="Rename" />
+          <span id="inspector-type" class="inspector-type"></span>
+        </div>
+
+        <!-- Canvas properties (shown when nothing is selected) -->
+        <div class="panel" id="panel-canvas" style="display:none">
+          <div class="panel-header">
+            <span>Canvas</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="appearance-row">
+              <span class="appearance-label">Background</span>
+              <div class="appearance-color-btn" id="canvas-bg-btn" title="Canvas background colour">
+                <div class="appearance-color-inner" id="canvas-bg-preview"></div>
+              </div>
+              <button id="canvas-bg-reset" class="ap-add-btn" title="Reset to the default background" style="margin-left:auto;display:none">Reset</button>
+            </div>
+            <div class="ap-empty" id="canvas-hint">This colour fills the canvas behind your artwork and is saved with the document.</div>
+          </div>
+        </div>
+
+        <!-- Style editor: the library style focused in the Library panel. Live —
+             edits update the canvas as you scrub, no modal in the way. -->
+        <div class="panel" id="panel-style" style="display:none">
+          <div class="panel-header">
+            <span>Style</span>
+            <button class="panel-add" id="style-panel-close" title="Stop editing this style" aria-label="Stop editing this style">&#x2715;</button>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body" id="style-panel-body"></div>
+        </div>
+
+        <!-- Properties / Transform -->
+        <div class="panel" id="panel-properties">
+          <div class="panel-header">
+            <span>Transform</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <!-- Grouped by meaning — Position (X, Y) then Size (W, H) — so tabbing
+                 flows X→Y→W→H→R instead of interleaving position and size. -->
+            <div class="panel-row">
+              <div class="panel-field">
+                <label>X</label><input type="number" id="prop-x" value="0" step="1" />
+              </div>
+              <div class="panel-field">
+                <label>Y</label><input type="number" id="prop-y" value="0" step="1" />
+              </div>
+              <!-- Empty slot: keeps the X/Y inputs column-aligned with W/H, whose
+                   row ends in the aspect-lock button of the same width. -->
+              <span class="tf-lock-slot" aria-hidden="true"></span>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field">
+                <label class="dim-lbl"><span class="dim-lg">Width</span><span class="dim-sm">W</span></label><input type="number" id="prop-w" value="0" step="1" min="0" />
+              </div>
+              <div class="panel-field">
+                <label class="dim-lbl"><span class="dim-lg">Height</span><span class="dim-sm">H</span></label><input type="number" id="prop-h" value="0" step="1" min="0" />
+              </div>
+              <button type="button" id="prop-lock-ratio" class="tf-lock-slot ratio-lock"
+                      title="Constrain proportions (lock aspect ratio)" aria-pressed="false" aria-label="Lock aspect ratio">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 13a4 4 0 0 0 5.7.3l3-3a4 4 0 0 0-5.6-5.7l-1.5 1.4"/><path d="M15 11a4 4 0 0 0-5.7-.3l-3 3a4 4 0 0 0 5.6 5.7l1.5-1.4"/></svg>
+              </button>
+            </div>
+            <div class="panel-row" id="prop-rotation-row">
+              <div class="panel-field">
+                <label title="Rotation">R</label><input type="number" id="prop-rotation" value="0" step="1" /><span class="panel-unit">&deg;</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Repeat grid (issue #111): rows × cols pattern of a live-editable original.
+             Sits right under Transform so its settings are in view the moment a grid
+             is made or selected. -->
+        <div class="panel" id="panel-repeat">
+          <div class="panel-header">
+            <span>Repeat Grid</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="panel-row">
+              <div class="panel-field"><label>Columns</label><input type="number" id="rp-cols" min="1" max="100" step="1" value="3" /></div>
+              <div class="panel-field"><label>Rows</label><input type="number" id="rp-rows" min="1" max="100" step="1" value="1" /></div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field"><label>Gap X</label><input type="number" id="rp-gap-x" step="1" value="20" /></div>
+              <div class="panel-field"><label>Gap Y</label><input type="number" id="rp-gap-y" step="1" value="20" /></div>
+            </div>
+            <button id="rp-edit" class="rp-btn rp-edit" title="Edit the original shape in place — every copy follows your edits. Double-clicking the pattern on canvas does the same.">Edit shape</button>
+            <div class="rp-actions">
+              <button id="rp-bake" class="rp-btn" title="Turn every copy into a real, individually editable shape (the grid is gone afterwards)">Bake grid</button>
+              <button id="rp-release" class="rp-btn" title="Remove the copies, keeping only the original shape">Release grid</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame appearance (shown when a Frame is selected) -->
+        <div class="panel" id="panel-frame-bg" style="display:none">
+          <div class="panel-header">
+            <span>Frame</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="fp-row">
+              <span class="appearance-label">Background</span>
+              <button id="fp-bg-swatch" class="appearance-color-btn" title="Frame background colour">
+                <div class="appearance-color-inner"></div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame export targets (shown when a Frame is selected) -->
+        <div class="panel" id="panel-frame" style="display:none">
+          <div class="panel-header">
+            <span>Export</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="fp-export">
+              <div class="fp-export-head">
+                <span class="appearance-label">Targets</span>
+                <button id="fp-export-add" class="fp-export-add" title="Add a target or preset" aria-label="Add export target">+</button>
+              </div>
+              <div id="fp-export-list"></div>
+              <button id="fp-export-btn" class="fp-export-btn" title="Export all targets">Export</button>
+              <div id="fp-export-dest" class="fp-export-dest" hidden></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame layout grid (shown when a Frame is selected) -->
+        <div class="panel" id="panel-frame-grid" style="display:none">
+          <div class="panel-header">
+            <span>Grid</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <button id="fp-grid-add" class="fp-add-grid" title="Add a layout grid to this frame">+ Add grid</button>
+            <div id="fp-grid-fields" style="display:none">
+              <div class="fp-seg" id="fp-grid-mode">
+                <button data-mode="px" class="active" title="Fixed spacing in pixels — spacing stays the same when the frame resizes">Pixels</button>
+                <button data-mode="divisions" title="Divide the frame into equal parts — the count stays the same when the frame resizes; even counts give an exact center line">Divisions</button>
+              </div>
+              <div id="fp-grid-px-rows">
+                <div class="panel-row">
+                  <div class="panel-field">
+                    <label class="fp-px-lbl">Major: every</label>
+                    <input type="number" id="fp-grid-major" min="1" step="1" value="32" title="Strong gridline spacing — kept a whole multiple of the minor spacing" />
+                    <span class="panel-unit">px</span>
+                  </div>
+                </div>
+                <div class="panel-row">
+                  <div class="panel-field">
+                    <label class="fp-px-lbl">Minor: every</label>
+                    <input type="number" id="fp-grid-minor" min="1" step="1" value="8" title="Fine gridline spacing — also the snap step" />
+                    <span class="panel-unit">px</span>
+                  </div>
+                </div>
+              </div>
+              <div id="fp-grid-div-rows" style="display:none">
+                <div class="panel-row">
+                  <div class="panel-field">
+                    <label>Cols</label>
+                    <input type="number" id="fp-grid-cols" min="1" step="1" value="4" title="Divisions across the width — even counts give a center line" />
+                  </div>
+                  <div class="panel-field">
+                    <label>Rows</label>
+                    <input type="number" id="fp-grid-rows" min="1" step="1" value="4" title="Divisions down the height — even counts give a center line" />
+                  </div>
+                </div>
+                <div class="panel-row">
+                  <div class="panel-field">
+                    <label>Subdiv</label>
+                    <input type="number" id="fp-grid-subdiv-div" min="1" step="1" value="1" title="Minor cells per division (1 = none)" />
+                  </div>
+                  <div class="panel-field"></div>
+                </div>
+              </div>
+              <div class="fp-row">
+                <span class="appearance-label">Color</span>
+                <div class="appearance-color-btn" id="fp-grid-color-btn" title="Grid colour">
+                  <div class="appearance-color-inner" id="fp-grid-color-preview"></div>
+                </div>
+              </div>
+              <div class="fp-row">
+                <span class="appearance-label">Show grid</span>
+                <button class="ai-switch" id="fp-grid-vis" role="switch" aria-checked="false" aria-label="Show grid"></button>
+              </div>
+              <div class="fp-row">
+                <span class="appearance-label">Snap to grid</span>
+                <button class="ai-switch" id="fp-grid-snap" role="switch" aria-checked="false" aria-label="Snap to grid"></button>
+              </div>
+              <button id="fp-grid-remove" class="fp-remove-grid">Remove grid</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame rulers (shown when a Frame is selected) -->
+        <div class="panel" id="panel-frame-rulers" style="display:none">
+          <div class="panel-header">
+            <span>Rulers</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="fp-row">
+              <span class="appearance-label">Show rulers</span>
+              <button class="ai-switch" id="fp-rulers" role="switch" aria-checked="false" aria-label="Show rulers"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Which library styles the selection uses. Sits directly above Fill so the
+             link is visible where you edit the thing it controls. -->
+        <div class="panel" id="panel-object-styles" style="display:none">
+          <div class="panel-header">
+            <span>Styles</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body" id="object-styles-body"></div>
+        </div>
+
+        <!-- Fill -->
+        <div class="panel" id="panel-fill" style="display:none">
+          <div class="panel-header">
+            <span>Fills</span>
+            <button class="panel-add" id="add-fill-btn" title="Add fill">&#x2b;</button>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <!-- Fills: multiple fills (solid/gradient/image/pattern) — ui/appearance-panel.ts.
+                 Shown for a single selection; the Fill group below handles multi-select.
+                 The + lives in the panel header (like Layers), so no inner label here. -->
+            <div class="appearance-group" id="fills-section">
+              <div class="ap-list" id="fills-list"></div>
+            </div>
+
+            <!-- Fill group (single Fill row) — used for multi-selection mixed display -->
+            <div class="appearance-group" id="fill-group">
+              <div class="appearance-row">
+                <button class="appearance-toggle" id="prop-fill-none" title="Toggle Fill on/off">Fill</button>
+                <div class="appearance-color-btn" id="prop-fill-btn" title="Click to pick fill color">
+                  <div class="appearance-color-inner" id="prop-fill-preview" style="background:#FFFFFF"></div>
+                </div>
+              </div>
+              <div class="appearance-row">
+                <span class="appearance-label">Opacity</span>
+                <input type="range" id="prop-fill-opacity" min="0" max="1" step="0.01" value="1" class="appearance-slider" title="Fill Opacity" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stroke -->
+        <div class="panel" id="panel-stroke" style="display:none">
+          <div class="panel-header">
+            <span>Strokes</span>
+            <button class="panel-add" id="add-stroke-btn" title="Add stroke">&#x2b;</button>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <!-- Stroke group. The + lives in the panel header (like Layers). -->
+            <div class="appearance-group" id="stroke-group">
+              <!-- Strokes: multiple strokes per path, rendered by ui/strokes-panel.ts -->
+              <div class="ap-list" id="strokes-list"></div>
+            </div>
+
+            <!-- Line-end cap (lines & open paths): flat / round / square. A stroke
+                 property surfaced here (not just in the per-stroke expand) so it's a
+                 first-class control. Shown/driven by ui/markers.ts for open paths. -->
+            <div class="appearance-row" id="prop-cap-row" style="display:none">
+              <span class="appearance-label" title="Line-end cap">Cap</span>
+              <div class="stroke-seg" id="prop-cap-buttons">
+                <button data-cap="butt" title="Flat — the stroke ends exactly at the endpoint"><span>Flat</span></button>
+                <button data-cap="round" title="Round — a semicircle past the endpoint"><span>Round</span></button>
+                <button data-cap="square" title="Square — a square projecting past the endpoint"><span>Square</span></button>
+              </div>
+            </div>
+
+            <!-- Corner join (shapes with corners): the shape of the corners where
+                 segments meet. Shown/driven by ui/markers.ts for cornered shapes. -->
+            <div class="appearance-row" id="prop-join-row" style="display:none">
+              <span class="appearance-label" title="Corner join">Corners</span>
+              <div class="stroke-seg" id="prop-join-buttons">
+                <button data-join="miter" title="Miter — sharp, pointed corners (extremely sharp angles auto-flatten)"><span>Miter</span></button>
+                <button data-join="round" title="Round — rounded corners"><span>Round</span></button>
+                <button data-join="bevel" title="Bevel — flattened corners"><span>Bevel</span></button>
+              </div>
+            </div>
+
+            <!-- Arrowheads / markers (lines & open paths) — a stroke property, so it
+                 lives in the Stroke panel. Shown by ui/markers.ts for lines/open paths. -->
+            <div class="appearance-row" id="prop-markers-row" style="display:none">
+              <span class="appearance-label" title="Line ends">Ends</span>
+              <select id="mk-start" class="appearance-select" title="Start marker">
+                <option value="">Start: None</option>
+                <option value="mk-arrow">Start: Arrow</option>
+                <option value="mk-dot">Start: Dot</option>
+                <option value="mk-open">Start: Open</option>
+              </select>
+              <select id="mk-end" class="appearance-select" title="End marker">
+                <option value="">End: None</option>
+                <option value="mk-arrow">End: Arrow</option>
+                <option value="mk-dot">End: Dot</option>
+                <option value="mk-open">End: Open</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appearance -->
+        <div class="panel" id="panel-appearance">
+          <div class="panel-header">
+            <span>Appearance</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <!-- Layer: object-level opacity + blend (Figma-style "Layer" props), above
+                 the fills. Distinct from per-fill opacity and from the Effects section. -->
+            <div class="appearance-group" id="layer-group" style="display:none">
+              <div class="ap-actions"><span class="ap-section-label">Layer</span></div>
+              <div class="appearance-row">
+                <span class="appearance-label" title="Object opacity">Opacity</span>
+                <input type="range" id="obj-opacity" min="0" max="1" step="0.01" value="1" class="appearance-slider" title="Object opacity" />
+              </div>
+              <div class="appearance-row" id="prop-blend-row">
+                <span class="appearance-label" title="Blend mode">Blend</span>
+                <select id="fx-blend" class="appearance-select" title="Blend mode">
+                  <option value="normal">Normal</option>
+                  <option value="multiply">Multiply</option>
+                  <option value="screen">Screen</option>
+                  <option value="overlay">Overlay</option>
+                  <option value="darken">Darken</option>
+                  <option value="lighten">Lighten</option>
+                  <option value="color-dodge">Color Dodge</option>
+                  <option value="color-burn">Color Burn</option>
+                  <option value="hard-light">Hard Light</option>
+                  <option value="soft-light">Soft Light</option>
+                  <option value="difference">Difference</option>
+                  <option value="exclusion">Exclusion</option>
+                  <option value="hue">Hue</option>
+                  <option value="saturation">Saturation</option>
+                  <option value="color">Color</option>
+                  <option value="luminosity">Luminosity</option>
+                </select>
+              </div>
+              <div class="appearance-divider"></div>
+            </div>
+
+            <!-- Corner radius (rect only). Linked field = all corners; the toggle
+                 reveals a 2x2 grid to set each corner independently. -->
+            <div class="appearance-row" id="prop-corners-row" style="display:none">
+              <button class="corner-toggle" id="prop-corners-toggle" title="Per-corner radius" aria-label="Toggle per-corner radius">&#x25BC;</button>
+              <span class="appearance-label" title="Corner Radius">Radius</span>
+              <input type="number" id="prop-rx" value="0" step="1" min="0" title="Corner radius (all corners)" class="appearance-weight" style="width:54px" />
+              <span class="appearance-unit">px</span>
+            </div>
+            <div class="corners-grid" id="prop-corners-grid" style="display:none">
+              <input type="number" id="prop-rx-tl" min="0" step="1" value="0" class="appearance-weight" title="Top-left corner" />
+              <input type="number" id="prop-rx-tr" min="0" step="1" value="0" class="appearance-weight" title="Top-right corner" />
+              <input type="number" id="prop-rx-bl" min="0" step="1" value="0" class="appearance-weight" title="Bottom-left corner" />
+              <input type="number" id="prop-rx-br" min="0" step="1" value="0" class="appearance-weight" title="Bottom-right corner" />
+            </div>
+
+            <div class="appearance-divider"></div>
+
+            <!-- Effects: object-level blend, blur & drop shadow, grouped under one
+                 titled section so they read as intentional (not scattered rows). -->
+            <div class="appearance-group" id="effects-group" style="display:none">
+              <div class="ap-actions"><span class="ap-section-label">Effects</span></div>
+
+              <div class="appearance-row" id="prop-effects-row">
+                <span class="appearance-label" title="Gaussian Blur">Blur</span>
+                <input type="range" id="fx-blur" min="0" max="40" step="0.1" value="0" class="appearance-slider" title="Blur amount" />
+              </div>
+
+              <!-- Drop shadow: a real on/off switch (not the "None" slash-toggle) + colour. -->
+              <div class="appearance-row" id="prop-shadow-row">
+                <span class="appearance-label" title="Drop shadow">Shadow</span>
+                <button class="ai-switch" id="fx-shadow-toggle" role="switch" aria-checked="false" aria-label="Drop shadow"></button>
+                <div class="appearance-color-btn" id="fx-shadow-color-btn" title="Shadow color" style="margin-left:auto">
+                  <div class="appearance-color-inner" id="fx-shadow-color-preview" style="background:#000000"></div>
+                </div>
+              </div>
+              <!-- Shadow params — indented block, revealed only while the shadow is on. -->
+              <div id="prop-shadow-params" class="fx-shadow-params" style="display:none">
+                <div class="appearance-row fx-shadow-sub">
+                  <span class="appearance-label" title="Horizontal offset">X</span>
+                  <input type="number" id="fx-shadow-dx" value="4" step="1" class="appearance-weight" title="Shadow X offset" />
+                  <span class="appearance-label" title="Vertical offset">Y</span>
+                  <input type="number" id="fx-shadow-dy" value="4" step="1" class="appearance-weight" title="Shadow Y offset" />
+                  <span class="appearance-label" title="Softness">Blur</span>
+                  <input type="number" id="fx-shadow-blur" value="4" step="0.5" min="0" class="appearance-weight" title="Shadow blur" />
+                </div>
+                <div class="appearance-row fx-shadow-sub">
+                  <span class="appearance-label" title="Shadow opacity">Opacity</span>
+                  <input type="range" id="fx-shadow-opacity" min="0" max="1" step="0.01" value="0.5" class="appearance-slider" title="Shadow opacity" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Node point type (shown while node-editing a path) -->
+            <div class="appearance-row" id="prop-node-row" style="display:none">
+              <span class="appearance-label" title="Anchor point type">Point</span>
+              <div class="seg-btns">
+                <button class="appearance-toggle" id="prop-node-corner" title="Corner point (no handles)">Corner</button>
+                <button class="appearance-toggle" id="prop-node-smooth" title="Smooth point (connected handles)">Smooth</button>
+                <button class="appearance-toggle" id="prop-node-broken" title="Broken point (separated handles)">Broken</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Width (variable-width stroke profiles) -->
+        <div class="panel" id="panel-width">
+          <div class="panel-header">
+            <span>Width</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="width-row">
+              <span class="appearance-label" title="Base stroke width">Width</span>
+              <input type="number" id="width-base" value="12" min="0" step="0.5" class="appearance-weight" />
+              <span class="appearance-unit">pt</span>
+              <button id="width-release" class="ap-add-btn" title="Remove the width profile, restoring a plain stroke" style="margin-left:auto;display:none">Release</button>
+            </div>
+            <div id="width-presets" class="width-presets">
+              <button class="width-preset" data-profile="uniform" title="Uniform width"><svg viewBox="0 0 40 20"><path d="M2 8 L38 8 L38 12 L2 12 Z" fill="currentColor"/></svg></button>
+              <button class="width-preset" data-profile="taperEnd" title="Taper to end"><svg viewBox="0 0 40 20"><path d="M2 6 L38 10 L2 14 Z" fill="currentColor"/></svg></button>
+              <button class="width-preset" data-profile="taperStart" title="Taper from start"><svg viewBox="0 0 40 20"><path d="M38 6 L2 10 L38 14 Z" fill="currentColor"/></svg></button>
+              <button class="width-preset" data-profile="leaf" title="Taper both ends (leaf)"><svg viewBox="0 0 40 20"><path d="M2 10 Q20 3 38 10 Q20 17 2 10 Z" fill="currentColor"/></svg></button>
+              <button class="width-preset" data-profile="bulge" title="Bulge in the middle"><svg viewBox="0 0 40 20"><path d="M2 8 Q20 1 38 8 L38 12 Q20 19 2 12 Z" fill="currentColor"/></svg></button>
+              <button class="width-preset" data-profile="waist" title="Pinch in the middle"><svg viewBox="0 0 40 20"><path d="M2 5 Q20 11 38 5 L38 15 Q20 9 2 15 Z" fill="currentColor"/></svg></button>
+            </div>
+            <div id="width-empty" class="ap-empty">Select a path to give it a variable-width stroke.</div>
+          </div>
+        </div>
+
+        <!-- Swatches -->
+        <div class="panel" id="panel-swatches">
+          <div class="panel-header">
+            <span>Swatches</span>
+            <button class="panel-add" id="swatch-add" title="Add current fill colour to swatches">&#x2b;</button>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div id="swatches-grid" class="swatches-grid"></div>
+          </div>
+        </div>
+
+        <!-- Align -->
+        <div class="panel" id="panel-align">
+          <div class="panel-header">
+            <span>Align</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="align-buttons">
+              <button data-align="left" title="Align Left — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="3" y1="2" x2="3" y2="18" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="4" width="12" height="4" fill="currentColor"/><rect x="3" y="12" width="8" height="4" fill="currentColor"/></svg>
+              </button>
+              <button data-align="center-h" title="Align Horizontal Centers — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="10" y1="2" x2="10" y2="18" stroke="currentColor" stroke-width="1"/><rect x="4" y="4" width="12" height="4" fill="currentColor"/><rect x="6" y="12" width="8" height="4" fill="currentColor"/></svg>
+              </button>
+              <button data-align="right" title="Align Right — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="17" y1="2" x2="17" y2="18" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="4" width="12" height="4" fill="currentColor"/><rect x="9" y="12" width="8" height="4" fill="currentColor"/></svg>
+              </button>
+              <button data-align="top" title="Align Top — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="2" y1="3" x2="18" y2="3" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="3" width="4" height="12" fill="currentColor"/><rect x="12" y="3" width="4" height="8" fill="currentColor"/></svg>
+              </button>
+              <button data-align="center-v" title="Align Vertical Centers — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1"/><rect x="4" y="4" width="4" height="12" fill="currentColor"/><rect x="12" y="6" width="4" height="8" fill="currentColor"/></svg>
+              </button>
+              <button data-align="bottom" title="Align Bottom — multiple objects align to each other, one object to the frame">
+                <svg viewBox="0 0 20 20"><line x1="2" y1="17" x2="18" y2="17" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="5" width="4" height="12" fill="currentColor"/><rect x="12" y="9" width="4" height="8" fill="currentColor"/></svg>
+              </button>
+            </div>
+            <div class="align-buttons">
+              <button data-distribute="h" title="Distribute Horizontal Centers (3+ objects)">
+                <svg viewBox="0 0 20 20"><rect x="1" y="6" width="3" height="8" fill="currentColor"/><rect x="8.5" y="6" width="3" height="8" fill="currentColor"/><rect x="16" y="6" width="3" height="8" fill="currentColor"/></svg>
+              </button>
+              <button data-distribute="v" title="Distribute Vertical Centers (3+ objects)">
+                <svg viewBox="0 0 20 20"><rect x="6" y="1" width="8" height="3" fill="currentColor"/><rect x="6" y="8.5" width="8" height="3" fill="currentColor"/><rect x="6" y="16" width="8" height="3" fill="currentColor"/></svg>
+              </button>
+              <button data-distribute="diag-nwse" title="Distribute Diagonal NW→SE (3+ objects)">
+                <svg viewBox="0 0 20 20"><circle cx="2" cy="2" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="18" cy="18" r="1.5" fill="currentColor"/></svg>
+              </button>
+              <button data-distribute="diag-nesw" title="Distribute Diagonal NE→SW (3+ objects)">
+                <svg viewBox="0 0 20 20"><circle cx="18" cy="2" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="2" cy="18" r="1.5" fill="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pathfinder (boolean ops) -->
+        <div class="panel" id="panel-pathfinder">
+          <div class="panel-header">
+            <span>Pathfinder</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="align-buttons pathfinder-buttons">
+              <button data-bool="unite" title="Unite — merge into one shape">
+                <svg viewBox="0 0 30 18"><circle cx="11" cy="9" r="7" fill="currentColor"/><circle cx="19" cy="9" r="7" fill="currentColor"/></svg>
+              </button>
+              <button data-bool="subtract" title="Subtract — front shape cuts the one behind">
+                <svg viewBox="0 0 30 18"><defs><mask id="pf-sub"><rect x="0" y="0" width="30" height="18" fill="white"/><circle cx="19" cy="9" r="7" fill="black"/></mask></defs><circle cx="19" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="11" cy="9" r="7" fill="currentColor" mask="url(#pf-sub)"/></svg>
+              </button>
+              <button data-bool="intersect" title="Intersect — keep only the overlap">
+                <svg viewBox="0 0 30 18"><defs><clipPath id="pf-int"><circle cx="19" cy="9" r="7"/></clipPath></defs><circle cx="11" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="19" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4"/><circle cx="11" cy="9" r="7" fill="currentColor" clip-path="url(#pf-int)"/></svg>
+              </button>
+              <button data-bool="exclude" title="Exclude — remove the overlap">
+                <svg viewBox="0 0 30 18"><path fill="currentColor" fill-rule="evenodd" d="M4 9a7 7 0 1 0 14 0a7 7 0 1 0 -14 0z M12 9a7 7 0 1 0 14 0a7 7 0 1 0 -14 0z"/></svg>
+              </button>
+              <button data-bool="divide" title="Divide — split into separate pieces">
+                <svg viewBox="0 0 30 18"><circle cx="11" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="19" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+              </button>
+            </div>
+            <div class="pathfinder-row">
+              <button id="pf-swap" class="pf-text-btn" title="Subtract order — flips which shape is KEPT vs. cut away. Hover to preview; click to flip.">&#x21C4; Swap order</button>
+              <button id="pf-flatten" class="pf-text-btn" title="Commit this compound shape to a plain path">Flatten</button>
+            </div>
+            <div class="pathfinder-hint" id="pf-hint">Select 2+ shapes</div>
+          </div>
+        </div>
+
+        <!-- Type (shown only when text selected) -->
+        <div class="panel" id="panel-type" style="display:none">
+          <div class="panel-header">
+            <span>Character</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="panel-row">
+              <div class="panel-field full">
+                <label>Contents</label>
+                <textarea id="prop-text-content" rows="2" spellcheck="false" placeholder="Type text…"></textarea>
+              </div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field full">
+                <label>Font</label>
+                <div id="font-family-picker"></div>
+              </div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field">
+                <label>Size</label>
+                <input type="number" id="prop-font-size" value="24" min="1" max="999" />
+              </div>
+              <div class="panel-field">
+                <label>Weight</label>
+                <select id="prop-font-weight"></select>
+              </div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field">
+                <label>Line height</label>
+                <input type="number" id="prop-line-height" value="1.2" min="0.5" max="4" step="0.1" />
+              </div>
+              <div class="panel-field">
+                <label>Letter spacing</label>
+                <input type="number" id="prop-letter-spacing" value="0" step="0.5" />
+              </div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field">
+                <label>Alignment</label>
+                <div class="text-style-group" id="text-align">
+                  <button class="text-style-btn" data-anchor="start" title="Align left">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h10"/></svg>
+                  </button>
+                  <button class="text-style-btn" data-anchor="middle" title="Align center">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M4 8h8M3 12h10"/></svg>
+                  </button>
+                  <button class="text-style-btn" data-anchor="end" title="Align right">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M6 8h8M4 12h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="panel-field">
+                <label>Style</label>
+                <div class="text-style-group">
+                  <button id="prop-italic" class="text-style-btn" title="Italic"><i>I</i></button>
+                </div>
+              </div>
+            </div>
+            <!-- Vertical alignment within the text box — only for fixed-height area
+                 text (a dragged-out box); hidden for point text. -->
+            <div class="panel-row" id="prop-valign-row" style="display:none">
+              <div class="panel-field">
+                <label>Vertical</label>
+                <div class="text-style-group" id="text-valign">
+                  <button class="text-style-btn" data-valign="top" title="Align top">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3h10M5 6h6M5 9h6"/></svg>
+                  </button>
+                  <button class="text-style-btn" data-valign="middle" title="Align middle">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 5h6M3 8h10M5 11h6"/></svg>
+                  </button>
+                  <button class="text-style-btn" data-valign="bottom" title="Align bottom">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 7h6M5 10h6M3 13h10"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Type settings (advanced typography; shown only when text selected) -->
+        <div class="panel" id="panel-type-advanced" style="display:none">
+          <div class="panel-header">
+            <span>Type settings</span>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body">
+            <div class="panel-row">
+              <div class="panel-field full">
+                <label>Case</label>
+                <select id="prop-text-transform">
+                  <option value="none">Original</option>
+                  <option value="uppercase">UPPERCASE</option>
+                  <option value="lowercase">lowercase</option>
+                  <option value="capitalize">Capitalize</option>
+                </select>
+              </div>
+            </div>
+            <div class="panel-row">
+              <div class="panel-field">
+                <label>Decoration</label>
+                <div class="text-style-group">
+                  <button id="prop-underline" class="text-style-btn" title="Underline"><span style="text-decoration:underline">U</span></button>
+                  <button id="prop-strike" class="text-style-btn" title="Strikethrough"><span style="text-decoration:line-through">S</span></button>
+                </div>
+              </div>
+              <div class="panel-field">
+                <label>Baseline</label>
+                <input type="number" id="prop-baseline-shift" value="0" step="1" />
+              </div>
+            </div>
+            <!-- Path controls: shown only when the text is flowed on a path -->
+            <div class="panel-row" id="prop-path-row" style="display:none">
+              <div class="panel-field full">
+                <label>Path offset (%)</label>
+                <input type="number" id="prop-path-offset" value="0" min="0" max="100" step="1" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Symbols -->
+        <div class="panel" id="panel-symbols">
+          <div class="panel-header">
+            <span>Symbols</span>
+            <button class="panel-add" id="btn-create-symbol" title="Create Symbol from Selection">&#x2b;</button>
+            <button class="panel-collapse">&#x25BC;</button>
+          </div>
+          <div class="panel-body panel-body-layers">
+            <ul id="symbols-list"></ul>
+          </div>
+          <div class="panel-footer">
+            <button id="btn-detach-symbol" title="Detach Symbol Instance">Detach</button>
+          </div>
+        </div>
+
+        <!-- Artboards -->
+      </aside>
+
+      <!-- Drag handles to resize the side panels (see ui/panel-resize.ts). -->
+      <div id="left-resizer" class="panel-resizer" title="Drag to resize · double-click to reset"></div>
+      <div id="right-resizer" class="panel-resizer" title="Drag to resize · double-click to reset"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <footer id="status-bar">
+      <div class="status-left">
+        <span id="tool-label">Selection Tool</span>
+      </div>
+      <div class="status-center">
+        <span id="cursor-pos">0, 0</span>
+        &nbsp;&middot;&nbsp;
+        <span id="artboard-label">960 &times; 540</span>
+      </div>
+      <div class="status-right">
+        <button id="btn-zoom-out" class="status-btn">&minus;</button>
+        <select id="zoom-select">
+          <option value="0.125">12.5%</option>
+          <option value="0.25">25%</option>
+          <option value="0.333">33.3%</option>
+          <option value="0.5">50%</option>
+          <option value="0.667">66.7%</option>
+          <option value="0.75">75%</option>
+          <option value="1" selected>100%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+          <option value="3">300%</option>
+          <option value="4">400%</option>
+          <option value="6">600%</option>
+        </select>
+        <button id="btn-zoom-in" class="status-btn">+</button>
+        <button id="btn-zoom-fit" class="status-btn" title="Fit Frame in Window">&#x2922;</button>
+      </div>
+    </footer>
+  </div>
+  <input type="file" id="file-input" accept=".svg,.png,.jpg,.jpeg,.gif,.webp" style="display:none" />
+  <script type="module" src="./src/entry.ts"></script>
+</body>
+</html>

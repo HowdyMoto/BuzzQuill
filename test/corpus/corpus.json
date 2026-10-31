@@ -1,0 +1,94 @@
+{
+  "$comment": "Real-world SVG stress corpus for import/round-trip tests. Files are NOT committed (see .gitignore); run `npm run corpus:fetch` to download them from Wikimedia Commons. Each file is under its own free license — see the `page` URL. sha256 pins the version these tests were written against.",
+  "destDir": "test/corpus/svg",
+  "files": [
+    {
+      "file": "Coat_of_arms_of_Villa_Alemana.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Villa_Alemana.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Villa_Alemana.svg",
+      "bytes": 42628426,
+      "sha256": "a14a711cb9d28c146a534c3f7877af0313cb5aa75c3a88bacee3159eb56084c4",
+      "notes": "Inkscape; 9k paths, 1.8k clipPaths, 2.7k <style>, 44 embedded PNGs, masks"
+    },
+    {
+      "file": "Columbiarivermap.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Columbiarivermap.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Columbiarivermap.svg",
+      "bytes": 16687292,
+      "sha256": "65eb43452a2b1864a77455af64d30596a06b1b52ad7e3a613b16bb83076b63a8",
+      "notes": "Adobe Illustrator; <switch>/<foreignObject> + 68 data:;base64 PNG tiles; custom i/x/graph namespaces"
+    },
+    {
+      "file": "Germany_(+districts_+municipalities)_location_map_current.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Germany_%28%2Bdistricts_%2Bmunicipalities%29_location_map_current.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Germany_%28%2Bdistricts_%2Bmunicipalities%29_location_map_current.svg",
+      "bytes": 26483520,
+      "sha256": "acb81c73987314a36f527871c1de7c8b601894d7121c543efd145d2267b41afb",
+      "notes": "19.5k paths, almost all id-less; no root xmlns prefixes"
+    },
+    {
+      "file": "Koppen-Geiger_Map_A_present.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Koppen-Geiger_Map_A_present.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Koppen-Geiger_Map_A_present.svg",
+      "bytes": 79058833,
+      "sha256": "a68b74d82ca8220458dc89b6ab24ef394d5422ac09ea3eb0dd5d29f5e6ba4116",
+      "notes": "matplotlib; 117k paths, scattered <defs>, mostly id-less; xmlns:bx; 79MB"
+    },
+    {
+      "file": "LuChenAttractor3D.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:LuChenAttractor3D.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/LuChenAttractor3D.svg",
+      "bytes": 20762996,
+      "sha256": "a24a1d129a11ce870a89cda672fec7714c60201e1e11ea888925124ff05a3c85",
+      "notes": "matplotlib; 100k paths + 100k groups"
+    },
+    {
+      "file": "Mapa_Distrital_Elecciones_Perú_2016_1V.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Mapa_Distrital_Elecciones_Per%C3%BA_2016_1V.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Mapa_Distrital_Elecciones_Per%C3%BA_2016_1V.svg",
+      "bytes": 28358353,
+      "sha256": "9980d04c7a0db166a500aa41393e48c119de35599da42232b5a377ad2e09be15",
+      "notes": "Inkscape; 2.4k paths, 479 clipPaths, 10 embedded PNGs"
+    },
+    {
+      "file": "Propane_flame_contours-en.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Propane_flame_contours-en.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Propane_flame_contours-en.svg",
+      "bytes": 31128619,
+      "sha256": "ce224cec4422e392c698aa20eeed3eb3c7149c6870abf252ef4cca7c591f8e6c",
+      "notes": "53k paths, 19k groups, 3.4k <use>+clipPath, mostly id-less"
+    },
+    {
+      "file": "Rivière_Chicoutimi_carte_estuaire.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Rivi%C3%A8re_Chicoutimi_carte_estuaire.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Rivi%C3%A8re_Chicoutimi_carte_estuaire.svg",
+      "bytes": 19372506,
+      "sha256": "b058cf05166c3cd25d567c88e296e098917d1810effd49a96e9e8eb38337fc32",
+      "notes": "Inkscape; <use>, nested groups, full RDF metadata"
+    },
+    {
+      "file": "Thousand_Island,_St._Lawrence_River.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Thousand_Island%2C_St._Lawrence_River.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Thousand_Island%2C_St._Lawrence_River.svg",
+      "bytes": 34152216,
+      "sha256": "a898610353eae64d48c2aaf5cc7459420550a75cd1492e9334c901b14c8ddeb6",
+      "notes": "15 embedded PNGs, all elements id-less"
+    },
+    {
+      "file": "Tove_Jansson_crowned_(cropped).svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Tove_Jansson_crowned_%28cropped%29.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Tove_Jansson_crowned_%28cropped%29.svg",
+      "bytes": 12428765,
+      "sha256": "5c42a4e624cecc4c25a73c4b91f6f95865b7b9bbde28be8141054f45c57c70ce",
+      "notes": "2 large embedded PNGs (traced portrait)"
+    },
+    {
+      "file": "US_Election04-08shift.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:US_Election04-08shift.svg",
+      "url": "https://commons.wikimedia.org/wiki/Special:FilePath/US_Election04-08shift.svg",
+      "bytes": 16858371,
+      "sha256": "3f89c260f13a792d25df1cbc662830262635c930f3cc6594dbb14f67f7030de7",
+      "notes": "7k paths, 21 embedded PNGs, 32 clipPaths"
+    }
+  ]
+}

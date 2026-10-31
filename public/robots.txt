@@ -1,0 +1,5 @@
+# BuzzQuill — allow all crawlers; the app is a single public page.
+User-agent: *
+Allow: /
+
+Sitemap: https://buzzquill.app/sitemap.xml

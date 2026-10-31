@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+<rect width="100" height="100" fill="url(#missing)" stroke="#000"/>
+  <rect x="20" y="20" width="60" height="60" fill="#7a7" clip-path="url(#nope)" filter="url(#gone)"/>
+  <use xlink:href="#ghost"/>
+</svg>
