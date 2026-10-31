@@ -4354,6 +4354,7 @@ input.fx-scrubbing {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  [data-node-direction-stroke] { opacity: 0 !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */

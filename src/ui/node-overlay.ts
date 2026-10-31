@@ -1,12 +1,69 @@
 import { pointMapperBetween } from '../core/coords';
 import { tokens } from './tokens';
 import type { AppState } from '../core/state';
+import type { SubPath } from '../core/path-model';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ACCENT = tokens.selectionAccent;
 // Rendering happens on zoom, selection and drag as well as entry. Keep one
 // timeline per editing session so rebuilding the overlay never restarts it.
 const reveals = new WeakMap<NonNullable<AppState['pathEdit']>, { started: number; canceled: boolean }>();
+
+/** A short stroke highlight whose head reaches each anchor at its pulse peak.
+ * Measure each mapped curve separately so unequal segment lengths and transforms
+ * do not desynchronize the stroke from the evenly staggered point pulses.
+ */
+function revealStroke(group: SVGGElement, sp: SubPath, spi: number,
+  map: (x: number, y: number) => { x: number; y: number },
+  step: number, elapsed: number, zoom: number): void {
+  const count = sp.closed ? sp.anchors.length : sp.anchors.length - 1;
+  const duration = count * step + 280;
+  if (count < 1 || elapsed >= duration) return;
+  const point = (x: number, y: number) => { const p = map(x, y); return `${p.x} ${p.y}`; };
+  let d = `M ${point(sp.anchors[0].x, sp.anchors[0].y)}`;
+  const distances = [0];
+  const measure = document.createElementNS(NS, 'path');
+  for (let i = 0; i < count; i++) {
+    const a = sp.anchors[i], b = sp.anchors[(i + 1) % sp.anchors.length];
+    const segment = a.outX === undefined && b.inX === undefined
+      ? `L ${point(b.x, b.y)}`
+      : `C ${point(a.outX ?? a.x, a.outY ?? a.y)} ${point(b.inX ?? b.x, b.inY ?? b.y)} ${point(b.x, b.y)}`;
+    measure.setAttribute('d', `M ${point(a.x, a.y)} ${segment}`);
+    distances.push(distances[i] + measure.getTotalLength());
+    d += ` ${segment}`;
+  }
+  const length = distances[count];
+  if (!(length > 0)) return;
+  // Keep the tail short on screen; never wrap around the beginning of a loop.
+  const tail = Math.min(0.18, 36 / (length * zoom));
+  const frames: Keyframe[] = [
+    { offset: 0, strokeDashoffset: String(tail), opacity: 0 },
+    ...distances.map((distance, i) => ({
+      offset: (84 + i * step) / duration,
+      strokeDashoffset: String(tail - distance / length), opacity: 1,
+    })),
+    { offset: 1, strokeDashoffset: String(tail - 1), opacity: 0 },
+  ];
+  // Accent edge + bright core stay readable over light and dark artwork.
+  for (const [stroke, width] of [[ACCENT, '5'], ['white', '2']] as const) {
+    const trail = document.createElementNS(NS, 'path');
+    trail.setAttribute('d', d);
+    trail.setAttribute('fill', 'none');
+    trail.setAttribute('stroke', stroke);
+    trail.setAttribute('stroke-width', width);
+    trail.setAttribute('stroke-linecap', 'round');
+    trail.setAttribute('vector-effect', 'non-scaling-stroke');
+    trail.setAttribute('pathLength', '1');
+    trail.setAttribute('stroke-dasharray', `${tail} ${1 + tail}`);
+    trail.setAttribute('pointer-events', 'none');
+    trail.setAttribute('aria-hidden', 'true');
+    trail.setAttribute('data-node-direction-stroke', String(spi));
+    group.appendChild(trail);
+    const animation = trail.animate(frames, { duration, easing: 'linear', fill: 'both' });
+    animation.currentTime = elapsed;
+    animation.onfinish = () => trail.remove();
+  }
+}
 
 /**
  * Render the node-editing overlay (anchors + handles for the path being edited)
@@ -54,7 +111,8 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
   session.model.subpaths.forEach((sp, spi) => {
     // Separate subpaths have separate directions: run them in parallel instead
     // of suggesting a connecting segment between them. Bound dense-path duration.
-    const step = Math.min(90, 800 / Math.max(1, sp.anchors.length - 1));
+    const step = Math.min(90, 800 / Math.max(1, sp.anchors.length - (sp.closed ? 0 : 1)));
+    if (!reveal.canceled) revealStroke(group, sp, spi, tp, step, elapsed, zoom);
     sp.anchors.forEach((a, i) => {
       const selected = session.isSelected(spi, i);
       const ap = tp(a.x, a.y);

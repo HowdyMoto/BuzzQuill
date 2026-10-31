@@ -27,7 +27,8 @@ them for successful exports/saves. Never celebrate a click before work completes
   repeated panel rendering. Rows and scrollable toolbar items don't shrink.
 - Switches: a small thumb settle; fields/selects: a ring on valid commit.
 - Point editing: a brief halo passes through anchors in stored path order once
-  per editing session. Subpaths run independently; dense sequences finish within
+  per editing session, with a bright stroke highlight reaching each point at
+  its pulse peak. Subpaths run independently; dense sequences finish within
   1.08s. Anchors remain visible and interactive, dragging cancels the sequence,
   and overlay redraws preserve elapsed time instead of replaying it.
 - Local and Drive saves: the owning tab says Saving while work is pending.
