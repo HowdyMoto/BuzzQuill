@@ -388,6 +388,15 @@ test('Disconnect blocks Save from reconnecting, including after reload, until ex
   await expect(page.locator('.toast', { hasText: 'access revoked' })).toBeVisible();
   for (const reload of [false, true]) {
     if (reload) {
+      // Session persistence is debounced; unloading before its write lands can
+      // legitimately restore the initial blank tab instead of this Drive file.
+      await expect.poll(() => page.evaluate(async () => {
+        const modulePath = '/src/core/session-store.ts';
+        const { loadSession } = await import(/* @vite-ignore */ modulePath);
+        const session = await loadSession();
+        const active = session?.tabs[session.activeIndex];
+        return active?.title === 'Pick.svg' && active?.source?.kind === 'drive';
+      })).toBe(true);
       await page.reload();
       await expect(page.locator('.doc-tab.active .doc-tab-name')).toHaveText('Pick.svg');
     }
