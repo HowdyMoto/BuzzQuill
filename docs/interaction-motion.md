@@ -18,7 +18,9 @@ them for successful exports/saves. Never celebrate a click before work completes
 
 ## Coverage and boundaries
 
-- Tools and compact actions: shared pulse, including keyboard tool selection.
+- Tools: a 460ms inset ring and icon spring, including keyboard tool selection;
+  only the icon scales, keeping the hit target stationary. Compact actions keep
+  the shared accent wash.
 - Menus/context menus, tooltips, dialogs, command palette and color picker:
   quick entrances; dismissal and focus restoration remain immediate.
 - Panels, layer creation and new tabs: animate only the state transition, never
