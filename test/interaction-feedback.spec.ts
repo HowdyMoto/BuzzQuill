@@ -98,6 +98,22 @@ test('toolbar press and keyboard activation keep the pointer target stationary',
   await expect(page.locator('.tool-btn[data-tool="select"]')).toHaveClass(/active/);
   await page.keyboard.press('m');
   await expect(tool).toHaveClass(/active/);
+  // Sample the actual rendered pulse at its ring peak: a class alone did not
+  // catch the previous low-contrast wash disappearing into the selected fill.
+  const pulse = await tool.evaluate(el => {
+    const ring = el.getAnimations().find(a => (a as CSSAnimation).animationName === 'fx-tool-ring')!;
+    const icon = el.querySelector('svg')!;
+    const spring = icon.getAnimations().find(a => (a as CSSAnimation).animationName === 'fx-tool-icon')!;
+    ring.pause(); ring.currentTime = 120;
+    spring.pause(); spring.currentTime = 120;
+    return { shadow: getComputedStyle(el).boxShadow, iconTransform: getComputedStyle(icon).transform };
+  });
+  expect(pulse.shadow).toContain('0.85');
+  expect(pulse.iconTransform).not.toBe('none');
   expect(await tool.boundingBox()).toEqual(before);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.keyboard.press('v');
+  await page.keyboard.press('m');
+  expect(await tool.evaluate(el => el.getAnimations().filter(a => (a as CSSAnimation).animationName).length)).toBe(0);
 });
 
