@@ -93,11 +93,11 @@ function ensureStyles(): void {
       position: absolute; border-radius: 10px;
       background: var(--ai-panel, #2b2b2b);
       opacity: 0; transform: scale(0.94);
-      transition: left .34s cubic-bezier(.34,1.42,.64,1),
-                  top .34s cubic-bezier(.34,1.42,.64,1),
-                  width .34s cubic-bezier(.34,1.42,.64,1),
-                  height .34s cubic-bezier(.34,1.42,.64,1),
-                  opacity .2s ease, transform .34s cubic-bezier(.34,1.42,.64,1);
+      transition: left var(--fx-settle) var(--fx-spring),
+                  top var(--fx-settle) var(--fx-spring),
+                  width var(--fx-settle) var(--fx-spring),
+                  height var(--fx-settle) var(--fx-spring),
+                  opacity .2s ease, transform var(--fx-settle) var(--fx-spring);
     }
     .toast-blob.show { opacity: 1; transform: scale(1); }
     .toast {
@@ -111,7 +111,7 @@ function ensureStyles(): void {
     }
     /* The content waits a beat, so the blob has swelled out of the tool bar
        before the text lands on it. Leaving has no delay. */
-    .toast.show { opacity: 1; transform: translateY(0); transition-delay: .12s; }
+    .toast.show { opacity: 1; transform: translateY(0); transition-delay: 40ms; }
     .toast-icon { flex: none; margin-top: 1px; color: #f0c040; position: relative; }
     .toast-icon svg { display: block; }
     /* Success: the ring, then the tick, draw themselves in, the icon pops, and a
@@ -122,12 +122,12 @@ function ensureStyles(): void {
     .toast.show.success .tick { animation: toast-draw .22s ease-out .4s forwards; }
     /* Losing .show ends those animations; keep the check drawn while it fades. */
     .toast.leaving.success .ring, .toast.leaving.success .tick { stroke-dashoffset: 0; }
-    .toast.show.success .toast-icon { animation: toast-pop .5s cubic-bezier(.34,1.56,.64,1) .14s both; }
+    .toast.show.success .toast-icon { animation: toast-pop .5s var(--fx-spring) .14s both; }
     .toast.show.warning .toast-icon { animation: toast-wobble .6s ease-in-out .3s both; }
-    .toast.show.info .toast-icon { animation: toast-bob .5s cubic-bezier(.34,1.56,.64,1) .2s both; }
+    .toast.show.info .toast-icon { animation: toast-bob .5s var(--fx-spring) .2s both; }
     @keyframes toast-draw { to { stroke-dashoffset: 0; } }
-    @keyframes toast-pop { 0% { transform: scale(.4); } 60% { transform: scale(1.28); } 100% { transform: scale(1); } }
-    @keyframes toast-wobble { 0%,100% { transform: rotate(0); } 20% { transform: rotate(-14deg); } 45% { transform: rotate(11deg); } 70% { transform: rotate(-6deg); } }
+    @keyframes toast-pop { 0% { transform: scale(.4); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+    @keyframes toast-wobble { 0%,100% { transform: rotate(0); } 20% { transform: rotate(-4deg); } 45% { transform: rotate(3deg); } 70% { transform: rotate(-1deg); } }
     @keyframes toast-bob { 0% { transform: translateY(5px) scale(.7); } 60% { transform: translateY(-2px) scale(1.1); } 100% { transform: none; } }
     .toast-sparks { position: absolute; left: 50%; top: 50%; pointer-events: none; }
     .toast-sparks i {
@@ -149,7 +149,7 @@ function ensureStyles(): void {
       transform: none; transition: opacity .35s ease;
     }
     /* Icon colour by kind — success reads as confident, not alarming. */
-    .toast.success .toast-icon { color: #3fb950; }
+    .toast.success .toast-icon { color: var(--fx-success); }
     .toast.warning .toast-icon { color: #f0c040; }
     .toast.info .toast-icon { color: var(--ai-accent, #4a8cff); }
     .toast-msg { flex: 1 1 auto; }
@@ -253,7 +253,7 @@ export interface ToastAction {
   onClick: () => void;
 }
 
-const SPARK_COLORS = ['#2ea043', '#4d7cfe', '#f0c040', '#e0553d', '#a371f7'];
+const SPARK_COLORS = ['var(--fx-success)', 'var(--ai-accent)', 'var(--ai-text-bright)'];
 
 /** Six dots that burst out of a success icon (same palette as the export confetti). */
 function sparks(): HTMLElement {
@@ -297,6 +297,7 @@ export function showToast(message: string, durationMs = 8000, action?: ToastActi
 
   const icon = document.createElement('span');
   icon.className = 'toast-icon';
+  icon.setAttribute('aria-hidden', 'true');
   icon.innerHTML = ICONS[kind];
   if (kind === 'success' && !prefersReducedMotion()) icon.appendChild(sparks());
 
@@ -308,6 +309,7 @@ export function showToast(message: string, durationMs = 8000, action?: ToastActi
   close.className = 'toast-close';
   close.textContent = '✕';
   close.title = 'Dismiss';
+  close.setAttribute('aria-label', 'Dismiss notification');
 
   const blob = document.createElement('div');
   blob.className = 'toast-blob';
@@ -372,15 +374,25 @@ export function showToast(message: string, durationMs = 8000, action?: ToastActi
     blob.classList.add('show');
   });
   if (durationMs > 0) {
-    // Hovering holds the toast, so a message being read doesn't vanish.
+    // Hover and keyboard focus hold the toast so reading or reaching its action never races expiry.
     let remaining = durationMs;
     let startedAt = 0;
-    const arm = () => { startedAt = performance.now(); timer = window.setTimeout(dismiss, remaining); };
-    toast.addEventListener('mouseenter', () => {
+    const pause = () => {
+      if (!timer) return;
       window.clearTimeout(timer);
+      timer = 0;
       remaining = Math.max(0, remaining - (performance.now() - startedAt));
-    });
-    toast.addEventListener('mouseleave', () => { if (!dismissed) arm(); });
+    };
+    const arm = () => {
+      if (dismissed || toast.matches(':hover') || toast.contains(document.activeElement)) return;
+      window.clearTimeout(timer);
+      startedAt = performance.now();
+      timer = window.setTimeout(dismiss, remaining);
+    };
+    toast.addEventListener('mouseenter', pause);
+    toast.addEventListener('mouseleave', arm);
+    toast.addEventListener('focusin', pause);
+    toast.addEventListener('focusout', () => queueMicrotask(arm));
     arm();
   }
 }

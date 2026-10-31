@@ -17,11 +17,15 @@ test('local Save As completion changes only its initiating tab', async ({ page }
   await page.locator('.menu-trigger', { hasText: 'File' }).click();
   await page.locator('[data-action="file.save-as"]').click();
   await page.waitForFunction(() => !!(window as any).releaseSave);
+  await expect(page.locator('.doc-tab.active .doc-tab-saving')).toHaveText('Saving…');
   await page.locator('.menu-trigger', { hasText: 'File' }).click();
   await page.locator('[data-action="file.new"]').click();
+  await expect(page.locator('.doc-tab').first().locator('.doc-tab-saving')).toBeVisible();
+  await expect(page.locator('.doc-tab.active .doc-tab-saving')).toHaveCount(0);
   const before = await page.evaluate(() => ({ name: document.title, source: (window as any).docs.activeSource }));
   await page.evaluate(() => (window as any).releaseSave());
   await expect(page.locator('.toast.success', { hasText: 'Saved-A.svg' })).toBeVisible();
+  await expect(page.locator('.doc-tab-saving')).toHaveCount(0);
   expect(await page.evaluate(() => ({ name: document.title, source: (window as any).docs.activeSource }))).toEqual(before);
   await page.locator('.doc-tab').first().click();
   await expect(page.locator('.doc-tab.active .doc-tab-name')).toHaveText('Saved-A.svg');

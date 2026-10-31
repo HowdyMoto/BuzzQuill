@@ -1222,20 +1222,6 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   background: var(--ai-accent); /* stay selected-looking; don't fall back to the hover grey */
 }
 
-/* Tool-switch feedback (keyboard OR click): a quick background pop on the newly
-   selected icon that settles into the active accent — no outline, just a
-   satisfying flash. */
-@keyframes tool-pulse {
-  0%   { background-color: #7cc0f7; transform: scale(1.14); }
-  100% { background-color: var(--ai-accent); transform: scale(1); }
-}
-
-.tool-btn.pulse {
-  animation: tool-pulse 0.4s ease-out;
-  position: relative;
-  z-index: 1; /* let the pop sit above neighbours */
-}
-
 .tool-divider {
   width: 1px;
   height: 22px;
@@ -1340,7 +1326,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   from { opacity: 0; transform: translateY(-6px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.doc-tab.tab-enter { animation: tab-in 240ms cubic-bezier(0.34, 1.45, 0.5, 1); }
+.doc-tab.tab-enter { animation: tab-in var(--fx-enter) var(--fx-spring); }
 
 /* Drag-to-reorder: fade the tab being dragged; an accent bar on the target's
    leading/trailing edge shows where it will drop. */
@@ -1551,7 +1537,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   from { transform: scale(0.94); opacity: 0.5; }
   to   { transform: scale(1);    opacity: 1; }
 }
-.tool-hint.gh-pop { animation: gesture-hud-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.tool-hint.gh-pop { animation: gesture-hud-pop 260ms var(--fx-spring); }
 @media (prefers-reduced-motion: reduce) {
   .tool-hint.gh-pop { animation: none; }
 }
@@ -1650,7 +1636,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   font-size: 9px;
   line-height: 1;
   transform: rotate(-90deg);
-  transition: transform 260ms cubic-bezier(0.34, 1.45, 0.5, 1), color var(--fx) var(--fx-ease);
+  transition: transform var(--fx-enter) var(--fx-spring), color var(--fx) var(--fx-ease);
 }
 .corner-toggle:hover { color: var(--ai-text); }
 .corner-toggle.active { transform: rotate(0deg); color: var(--ai-text); }
@@ -2298,7 +2284,7 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 /* Push the expand + delete controls to the far right of EVERY row (fills and strokes
    alike), so the ✕ lines up regardless of the fields before it (e.g. stroke weight). */
 .ap-expand { margin-left: auto; }
-.ap-expand svg { transition: transform 200ms cubic-bezier(0.34, 1.45, 0.5, 1); }
+.ap-expand svg { transition: transform 200ms var(--fx-spring); }
 .ap-expand:not(.collapsed) svg { transform: rotate(90deg); }
 .ap-color {
   width: 24px; height: 22px; padding: 2px; flex: 0 0 auto;
@@ -2951,8 +2937,8 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
    (same curve as the side-panel chevrons); otherwise it rests statically. */
 .layer-disclosure svg { transform-origin: 50% 50%; }
 .layer-disclosure.is-toggle.expanded svg { transform: rotate(90deg); }
-.layer-disclosure.chev-open svg  { animation: fx-chev 260ms cubic-bezier(0.34, 1.45, 0.5, 1); }
-.layer-disclosure.chev-close svg { animation: fx-chev 260ms cubic-bezier(0.34, 1.45, 0.5, 1) reverse; }
+.layer-disclosure.chev-open svg  { animation: fx-chev 260ms var(--fx-spring); }
+.layer-disclosure.chev-close svg { animation: fx-chev 260ms var(--fx-spring) reverse; }
 @keyframes fx-chev { from { transform: rotate(0deg); } to { transform: rotate(90deg); } }
 
 .layer-color {
@@ -3801,22 +3787,22 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
    per selection (ui/selection-popover.ts adds .ctx-enter only for a new
    selection, not when the bar returns after a drag). */
 @keyframes ctx-bar-in {
-  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.86); }
+  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.96); }
   55%  { opacity: 1; }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes ctx-item-in {
-  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.7); }
+  from { opacity: 0; transform: translateY(var(--ctx-dy, 8px)) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .ctx-popover.ctx-enter {
   --ctx-dy: 8px;
-  animation: ctx-bar-in 240ms cubic-bezier(0.34, 1.5, 0.6, 1) both;
+  animation: ctx-bar-in var(--fx-enter) var(--fx-spring) both;
 }
 .ctx-popover.ctx-enter[data-placed="below"] { --ctx-dy: -8px; }
 .ctx-popover.ctx-enter > * {
-  animation: ctx-item-in 260ms cubic-bezier(0.34, 1.6, 0.6, 1) both;
-  animation-delay: calc(50ms + var(--ctx-i, 0) * 24ms);
+  animation: ctx-item-in var(--fx-enter) var(--fx-spring) both;
+  animation-delay: calc(25ms + var(--ctx-i, 0) * 16ms);
 }
 
 /* Pathfinder bar: icon buttons (the boolean glyphs are wide and short). */
@@ -4200,9 +4186,13 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
    ============================================================ */
 :root {
   --fx-fast: 90ms;
-  --fx: 150ms;
+  --fx: 160ms;
+  --fx-enter: 220ms;
+  --fx-settle: 320ms;
+  --fx-spring: cubic-bezier(0.22, 1.18, 0.36, 1);
+  --fx-success: #3fb950;
   --fx-ease: cubic-bezier(0.2, 0, 0, 1); /* snappy ease-out */
-  --fx-accent-flash: rgba(33, 150, 243, 0.32);
+  --fx-accent-flash: color-mix(in srgb, var(--ai-accent) 24%, transparent);
 }
 
 /* Compact / icon / segmented buttons + swatches: consistent transitions and a
@@ -4210,7 +4200,7 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
 .btn, .tool-btn, .btn-group button, .align-buttons button, .panel-add,
 .panel-collapse, .appearance-toggle, .appearance-color-btn,
 .swatch-swap, .swatch-default, .swatch-fill, .swatch-stroke,
-.pathfinder-buttons button, .ctx-popover button, .cloud-seg, .dlg-seg-btn,
+.pathfinder-buttons button, .ctx-popover button, .dlg-seg-btn,
 .width-preset, .symbol-place-btn, .layer-vis, .layer-lock, .layer-export,
 .ap-vis, .ap-del, .layer-export, #tab-new, .doc-tab-close {
   transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease),
@@ -4223,11 +4213,11 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
 .panel-add:active,
 .appearance-toggle:active, .appearance-color-btn:active, .swatch-swap:active,
 .swatch-default:active,
-.pathfinder-buttons button:active, .ctx-popover button:active, .cloud-seg:active,
+.pathfinder-buttons button:active, .ctx-popover button:active,
 .dlg-seg-btn:active, .width-preset:active, .symbol-place-btn:active, .layer-vis:active,
 .layer-lock:active, .layer-export:active, .ap-vis:active, .ap-del:active,
 #tab-new:active, .doc-tab-close:active {
-  transform: scale(0.92);
+  transform: scale(0.97);
 }
 /* Toolbar items live in a horizontal scroll container, where a transform-press
    nudges the scroll and drops the click. Press them with brightness (no geometry
@@ -4255,7 +4245,7 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
   0%   { box-shadow: inset 0 0 0 100px var(--fx-accent-flash); }
   100% { box-shadow: inset 0 0 0 100px rgba(33, 150, 243, 0); }
 }
-.fx-pulse { animation: fx-pulse 0.4s var(--fx-ease); }
+.fx-pulse { animation: fx-pulse var(--fx-settle) var(--fx-ease); }
 
 /* Keyboard focus: a clear accent ring (only shows for keyboard users). */
 button:focus-visible, .tool-btn:focus-visible, .doc-tab:focus-visible,
@@ -4276,7 +4266,7 @@ input.fx-scrubbing {
   0%   { box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.5); }
   100% { box-shadow: 0 0 0 2px rgba(33, 150, 243, 0); }
 }
-.fx-field-flash { animation: fx-field-flash 0.45s var(--fx-ease); }
+.fx-field-flash { animation: fx-field-flash var(--fx-settle) var(--fx-ease); }
 
 /* Panel expand: a gentle reveal of the body (the collapse chevron already eases
    its rotation via the transition layer above). Collapse stays instant. */
@@ -4292,11 +4282,11 @@ input.fx-scrubbing {
    new layer" highlight, echoing the toolbar/action-button pulse. The inset shadow
    sits behind the row's text/icons, so it reads as the row glowing. */
 @keyframes fx-row-enter {
-  0%   { opacity: 0; transform: translateX(-10px); box-shadow: inset 0 0 0 999px rgba(33, 150, 243, 0.55); }
+  0%   { opacity: 0; transform: translateX(-4px); box-shadow: inset 0 0 0 999px var(--fx-accent-flash); }
   40%  { opacity: 1; transform: translateX(0); }
   100% { opacity: 1; transform: translateX(0); box-shadow: inset 0 0 0 999px rgba(33, 150, 243, 0); }
 }
-.layer-item.fx-enter { animation: fx-row-enter 0.6s var(--fx-ease); }
+.layer-item.fx-enter { animation: fx-row-enter var(--fx-settle) var(--fx-ease); }
 
 /* Floating menus pop into place: a quick scale+fade with a hint of spring, so
    opening reads as a response to the click rather than an appearance. Context
@@ -4308,7 +4298,7 @@ input.fx-scrubbing {
   to   { opacity: 1; transform: scale(1); }
 }
 .context-menu {
-  animation: fx-menu-in 130ms cubic-bezier(0.34, 1.3, 0.5, 1);
+  animation: fx-menu-in 130ms var(--fx-spring);
 }
 
 /* Menu-bar dropdowns get a subtler, faster slide-down (they open on hover-slide
@@ -4327,7 +4317,7 @@ input.fx-scrubbing {
    satisfying rotation — the snappy press timing was too quick to perceive on
    such a small glyph. Overrides the transform transition from the layer above. */
 .panel-collapse {
-  transition: transform 260ms cubic-bezier(0.34, 1.45, 0.5, 1),
+  transition: transform var(--fx-enter) var(--fx-spring),
               color var(--fx) var(--fx-ease);
 }
 
@@ -4533,3 +4523,56 @@ input.fx-scrubbing {
 .drive-status.reconnect { color: var(--ai-accent); pointer-events: auto; cursor: pointer; text-decoration: underline; }
 .doc-tab .doc-tab-badge.drive { color: var(--ai-accent); }
 .doc-tab.active .doc-tab-badge.drive { color: var(--ai-accent); }
+
+
+/* Shared motion language: press → reveal → settle. Animate chrome only; never
+   the artwork or the layout of a pointer target. No delayed dismissals. */
+.modal-close, .modal-dialog button, .cpicker-tab, .toast-action, .toast-close,
+.lib-row-more, .lib-section-head, .lib-folder-head, .fp-export-btn, .offset-btn {
+  transition: background var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease),
+    border-color var(--fx) var(--fx-ease), box-shadow var(--fx) var(--fx-ease), filter var(--fx-fast) var(--fx-ease);
+}
+.modal-dialog button:not(:disabled):not([aria-disabled="true"]):active,
+.cpicker-tab:not(:disabled):active, .toast-action:active, .toast-close:active,
+.lib-row-more:not(:disabled):active, .offset-btn:not(:disabled):active { filter: brightness(.9); }
+button:disabled:active, button[aria-disabled="true"]:active, button.disabled:active {
+  transform: none; filter: none;
+}
+.ai-switch::before {
+  transition: transform var(--fx-enter) var(--fx-spring), background var(--fx) var(--fx-ease);
+}
+.ai-switch:not(:disabled):active::before { scale: 1.12 .9; }
+.ai-switch::before { transition-property: transform, background, scale; }
+input, select, textarea {
+  transition: border-color var(--fx) var(--fx-ease), box-shadow var(--fx) var(--fx-ease);
+}
+@keyframes fx-surface-in {
+  from { opacity: 0; translate: 0 6px; scale: .985; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes fx-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fx-busy-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: no-preference) {
+  .modal-overlay, .cmdk-overlay:not([hidden]), .cpicker-overlay {
+    animation: fx-fade-in var(--fx) var(--fx-ease);
+  }
+  .modal-dialog, .cmdk-overlay:not([hidden]) .cmdk-panel, .cpicker-panel {
+    animation: fx-surface-in var(--fx-enter) var(--fx-spring);
+  }
+  .tooltip:not([hidden]) { animation: fx-surface-in var(--fx) var(--fx-ease); }
+}
+/* Saving is activity, never a success check. The dirty mark remains until the
+   captured revision is actually saved. The indicator follows its owning tab. */
+.doc-tab-saving { display: inline-flex; align-items: center; gap: 4px; color: var(--ai-text-dim); font-size: 10px; }
+.doc-tab-saving::before, .drive-status.saving::before {
+  content: ''; display: inline-block; width: 9px; height: 9px;
+  border: 1.5px solid color-mix(in srgb, var(--ai-accent) 25%, transparent);
+  border-top-color: var(--ai-accent); border-radius: 50%;
+  animation: fx-busy-turn 900ms linear infinite;
+}
+.drive-status.saving::before { margin-right: 6px; vertical-align: -1px; }
+.drive-status { transition: opacity var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease); }
+@media (prefers-reduced-motion: reduce) {
+  .ai-switch:active::before { scale: 1; }
+  .doc-tab-saving::before, .drive-status.saving::before { animation: none; }
+}

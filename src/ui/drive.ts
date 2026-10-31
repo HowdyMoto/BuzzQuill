@@ -54,6 +54,7 @@ function setChip(state: ChipState): void {
   if (!chip) return;
   chip.className = 'drive-status' + (state === 'hidden' ? '' : ` show ${state}`);
   chip.textContent = state === 'hidden' ? '' : CHIP_TEXT[state];
+  chip.setAttribute('aria-busy', String(state === 'saving'));
   chip.disabled = state !== 'reconnect';
 }
 
@@ -67,6 +68,8 @@ export function setupDrive(docs: DocumentManager): void {
   chip.id = 'drive-status';
   chip.className = 'drive-status';
   chip.title = 'Google Drive';
+  chip.setAttribute('aria-live', 'polite');
+  chip.setAttribute('aria-atomic', 'true');
   chip.addEventListener('click', () => { void connectDrive(); }); // only clickable in 'reconnect'
   host.appendChild(chip); // AFTER #discord-link — that stays the first thing in the cluster
   setupDriveRecentMenu((file) => openDriveFile(docs, file));

@@ -30,7 +30,7 @@ function ensureStyles(): void {
     }
     .loading-card {
       min-width: 300px; max-width: 70vw; padding: 22px 26px;
-      background: var(--ai-panel); border: 1px solid #555; border-radius: 8px;
+      background: var(--ai-panel); border: 1px solid var(--ai-border-light); border-radius: 10px;
       box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center; color: #e6e6e6;
     }
     .loading-label {
@@ -44,6 +44,12 @@ function ensureStyles(): void {
       height: 100%; width: 35%; border-radius: 3px; background: var(--ai-accent);
       will-change: transform;
       animation: loading-slide 1.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .loading-card { animation: fx-surface-in var(--fx-enter) var(--fx-spring); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .loading-bar { animation: none; transform: none; width: 100%; opacity: .55; }
     }
     @keyframes loading-slide {
       0%   { transform: translateX(-130%); }
@@ -72,6 +78,7 @@ function ensureOverlay(): void {
 export function showLoadingOverlay(label: string): void {
   ensureOverlay();
   if (labelEl) labelEl.textContent = label;
+  overlayEl!.setAttribute('aria-label', label);
   overlayEl!.style.display = 'flex';
 }
 

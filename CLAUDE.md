@@ -158,3 +158,7 @@ Panels follow `setupX(state)` (wire once at boot) + `updateX(state)` (called fro
 ## Asynchronous file saves
 
 All file saves use `beginDocumentSave` before the first await. It snapshots content and captures the initiating tab through `core/document-save.ts`; `DocumentManager` owns completion. Never call `adoptSource` or `markClean` from a save completion against whichever tab is active. Preserve per-tab serialization, closed-tab handling, and unsaved edits during upload.
+
+## Interaction motion
+
+Use the shared motion tokens in `style.css` and `ui/feedback.ts` for chrome feedback; see `docs/interaction-motion.md`. Animate state changes once, never render loops. Keep toolbar/row hit targets stationary, modal dismissal immediate, and reduced-motion status text visible. Success checks belong after successful work; save progress belongs to the captured document tab. Toast expiry must pause for keyboard focus as well as hover.

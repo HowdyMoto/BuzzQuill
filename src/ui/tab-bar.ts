@@ -158,6 +158,14 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
   name.className = 'doc-tab-name';
   name.textContent = t.title;
   tab.appendChild(name);
+  if (d.isSaving(t.id)) {
+    const progress = document.createElement('span');
+    progress.className = 'doc-tab-saving';
+    progress.textContent = 'Saving…';
+    tab.appendChild(progress);
+    tab.setAttribute('aria-busy', 'true');
+  }
+
 
   // Double-click to rename in place (reuses the Layers-panel inline editor). The
   // single-click that precedes a dblclick may switch tabs and re-render the bar, so

@@ -19,15 +19,32 @@ const PULSE_SELECTOR = [
   '.symbol-place-btn',
   '.panel-add',
   '.appearance-toggle',
+  '.dlg-seg-btn',
+  '.cpicker-tab',
+  '#fp-grid-mode button',
 ].join(',');
 
 /** Play a one-shot CSS animation class, restarting it if already running and
  *  removing it when it ends (so it can be re-triggered later). */
+const activeEffects = new WeakMap<HTMLElement, Map<string, () => void>>();
 function playOnce(el: HTMLElement, cls: string): void {
-  el.classList.remove(cls);
-  void el.offsetWidth; // reflow so re-triggering restarts the animation
+  const effects = activeEffects.get(el) ?? new Map<string, () => void>();
+  effects.get(cls)?.();
+  if (prefersReducedMotion()) return;
+  activeEffects.set(el, effects);
+  let timer: ReturnType<typeof setTimeout>;
+  const cleanup = () => {
+    clearTimeout(timer);
+    el.classList.remove(cls);
+    el.removeEventListener('animationend', ended);
+    effects.delete(cls);
+  };
+  const ended = (event: AnimationEvent) => { if (event.target === el) cleanup(); };
+  void el.offsetWidth;
   el.classList.add(cls);
-  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+  effects.set(cls, cleanup);
+  el.addEventListener('animationend', ended);
+  timer = setTimeout(cleanup, 1000); // hidden/removed nodes may never emit animationend
 }
 
 /** Replay the accent pulse on an element. */
@@ -94,8 +111,8 @@ function ensureExportSuccessStyles(): void {
   const el = document.createElement('style');
   el.textContent = `
 .fx-export-done {
-  animation: fx-export-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  background: #2ea043 !important; border-color: #2ea043 !important; color: #fff !important;
+  animation: fx-export-pop var(--fx-settle) var(--fx-spring);
+  background: var(--fx-success) !important; border-color: var(--fx-success) !important; color: #fff !important;
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
@@ -105,10 +122,10 @@ function ensureExportSuccessStyles(): void {
   stroke-dasharray: 30; stroke-dashoffset: 30; animation: fx-check-draw 0.42s 0.1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
 @keyframes fx-check-draw { to { stroke-dashoffset: 0; } }
-@keyframes fx-export-pop { 0% { transform: scale(1); } 28% { transform: scale(0.92); } 55% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes fx-export-pop { 0% { transform: scale(1); } 28% { transform: scale(0.97); } 55% { transform: scale(1.025); } 100% { transform: scale(1); } }
 .fx-burst { position: fixed; z-index: 12000; pointer-events: none; }
 .fx-burst i {
-  position: absolute; left: 0; top: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  position: absolute; left: 0; top: 0; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%;
   animation: fx-burst-kf 0.72s cubic-bezier(0.2, 0.75, 0.3, 1) forwards;
 }
 @keyframes fx-burst-kf {
@@ -117,7 +134,7 @@ function ensureExportSuccessStyles(): void {
 }
 /* Per-target row flash in the export sequence: spring pop + a green inset wash that
    fades, and a checkmark badge that pops+draws in at the row's right edge. */
-.fx-row-exported { animation: fx-row-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); border-radius: 6px; }
+.fx-row-exported { animation: fx-row-pop 0.5s var(--fx-spring); border-radius: 6px; }
 @keyframes fx-row-pop {
   0% { transform: scale(1); box-shadow: inset 0 0 0 2px rgba(46, 160, 67, 0.9); }
   45% { transform: scale(1.015); }
@@ -125,9 +142,9 @@ function ensureExportSuccessStyles(): void {
 }
 .fx-row-check {
   position: fixed; z-index: 12000; pointer-events: none;
-  width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #2ea043;
+  width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--fx-success);
   display: flex; align-items: center; justify-content: center;
-  animation: fx-row-check-kf 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: fx-row-check-kf 0.72s var(--fx-spring) forwards;
 }
 .fx-row-check svg { width: 12px; height: 12px; }
 .fx-row-check path { fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
@@ -141,7 +158,7 @@ function ensureExportSuccessStyles(): void {
 .fx-float-count {
   position: fixed; z-index: 12001; pointer-events: none; white-space: nowrap;
   font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; color: #fff;
-  background: #2ea043; padding: 2px 8px; border-radius: 999px;
+  background: var(--fx-success); padding: 2px 8px; border-radius: 999px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
   animation: fx-float-count-kf 1.15s cubic-bezier(0.22, 0.75, 0.3, 1) forwards;
 }
@@ -173,11 +190,11 @@ function confettiBurst(anchor: HTMLElement): void {
   c.className = 'fx-burst';
   c.style.left = `${r.left + r.width / 2}px`;
   c.style.top = `${r.top + r.height / 2}px`;
-  const colors = ['#2ea043', '#4d7cfe', '#f0c040', '#e0553d', '#a371f7'];
-  const N = 12;
+  const colors = ['var(--fx-success)', 'var(--ai-accent)', 'var(--ai-text-bright)'];
+  const N = 6;
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2 + 0.15;
-    const dist = 34 + (i % 3) * 9;
+    const dist = 20 + (i % 3) * 5;
     const dot = document.createElement('i');
     dot.style.setProperty('--dx', `${Math.cos(a) * dist}px`);
     dot.style.setProperty('--dy', `${Math.sin(a) * dist}px`);
@@ -214,9 +231,12 @@ export function playExportSuccess(btn: HTMLElement, opts: { compact?: boolean; l
   ensureExportSuccessStyles();
   if (btn.dataset.fxBusy) return; // one celebration at a time
   btn.dataset.fxBusy = '1';
-  const original = btn.innerHTML;
+  const original = Array.from(btn.childNodes);
+  const originalMinWidth = btn.style.minWidth;
+  const originalLabel = btn.getAttribute('aria-label');
   const check = '<svg class="fx-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5 11-12"/></svg>';
-  const label = document.createElement('span'); label.textContent = opts.label ?? 'Exported!';
+  const label = document.createElement('span'); label.textContent = opts.label ?? 'Exported';
+  btn.setAttribute('aria-label', label.textContent);
   if (!opts.compact) btn.style.minWidth = `${Math.round(btn.getBoundingClientRect().width)}px`; // no width jump on the label swap
   btn.classList.add('fx-export-done');
   btn.innerHTML = check;
@@ -225,8 +245,9 @@ export function playExportSuccess(btn: HTMLElement, opts: { compact?: boolean; l
   if (opts.count) floatCount(btn, opts.count);
   window.setTimeout(() => {
     btn.classList.remove('fx-export-done');
-    btn.innerHTML = original;
-    btn.style.minWidth = '';
+    btn.replaceChildren(...original);
+    btn.style.minWidth = originalMinWidth;
+    if (originalLabel === null) btn.removeAttribute('aria-label'); else btn.setAttribute('aria-label', originalLabel);
     delete btn.dataset.fxBusy;
   }, 1500);
 }
@@ -283,7 +304,7 @@ export function setupInteractionFeedback(): void {
     const target = e.target as Element | null;
     const btn = target?.closest?.(PULSE_SELECTOR) as HTMLElement | null;
     if (!btn) return;
-    if (btn.hasAttribute('disabled') || btn.classList.contains('disabled')) return;
+    if (btn.matches(':disabled, [aria-disabled="true"], .disabled') || btn.closest('[inert]')) return;
     pulse(btn);
   });
 
@@ -292,7 +313,9 @@ export function setupInteractionFeedback(): void {
   // typing; Arrow keydown adds immediate per-nudge feedback. Programmatic panel
   // rebuilds set `.value` without events, so those (frequent) updates don't flash.
   document.addEventListener('change', (e) => {
-    if (isNumberInput(e.target)) flashField(e.target);
+    const field = e.target;
+    if ((field instanceof HTMLInputElement || field instanceof HTMLSelectElement)
+        && !field.disabled && !field.closest('#svg-canvas') && field.checkValidity()) flashField(field);
   });
   document.addEventListener('keydown', (e) => {
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && isNumberInput(e.target)) {

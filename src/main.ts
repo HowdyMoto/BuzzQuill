@@ -68,7 +68,7 @@ import { setupFileDrop } from './ui/file-drop';
 import { createCommandPalette } from './ui/command-palette';
 import { setupNumberScrub } from './ui/number-scrub';
 import { commitFieldsOnCanvasPress, mustId } from './ui/dom';
-import { setupInteractionFeedback, animateExpand } from './ui/feedback';
+import { setupInteractionFeedback, animateExpand, pulse } from './ui/feedback';
 import { loadSession, scheduleSessionSave, flushSessionSave } from './core/session-store';
 import type { Tool } from './tools/base';
 import type { ToolName } from './core/types';
@@ -325,10 +325,7 @@ function updateContextPopovers(): void {
 function pulseToolButton(toolName: ToolName): void {
   const btn = document.querySelector(`.tool-btn[data-tool="${toolName}"]`) as HTMLElement | null;
   if (!btn) return;
-  btn.classList.remove('pulse');
-  void btn.offsetWidth; // reflow so re-triggering restarts the animation
-  btn.classList.add('pulse');
-  btn.addEventListener('animationend', () => btn.classList.remove('pulse'), { once: true });
+  pulse(btn);
 }
 
 // Mouse events on canvas

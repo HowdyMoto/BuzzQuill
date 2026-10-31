@@ -72,6 +72,8 @@ export class DocumentManager {
 
   private readonly saving = new Set<string>();
 
+  isSaving(id: string): boolean { return this.saving.has(id); }
+
   /** Keep file identity and the saved baseline attached to the initiating tab,
    * including when that tab is inactive or closed by the time a write finishes. */
   private captureSave(snapshot: string): DocumentSaveTarget | null {
@@ -80,11 +82,12 @@ export class DocumentManager {
     this.saving.add(tab.id);
     const history = this.state.exportHistory();
     const savedEntry = history.entries[history.index];
+    this.onChange(); // show progress on the owning tab before any async work
     return {
       source: getDocSource(),
       name: getProjectName(),
       isOpen: () => this.tabs.includes(tab),
-      release: () => { this.saving.delete(tab.id); },
+      release: () => { if (this.saving.delete(tab.id)) this.onChange(); },
       complete: (source, name, diskCopy = false) => {
         if (!this.tabs.includes(tab)) return;
         const active = this.activeId === tab.id;
