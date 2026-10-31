@@ -2,6 +2,7 @@ name: Checks
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,3 +37,62 @@ jobs:
         run: '"$RUNNER_TEMP/gitleaks/gitleaks" dir dist --redact --no-banner'
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test test/drive.spec.ts test/save-ownership.spec.ts test/svg-security.spec.ts test/author-styles.spec.ts test/fixtures.spec.ts test/clipboard.spec.ts test/doc-source.spec.ts test/interaction-feedback.spec.ts test/modal.spec.ts test/context-bar-entrance.spec.ts
+
+  deploy:
+    needs: verify
+    if: github.repository == 'HowdyMoto/BuzzQuill' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: cloudflare-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT: ${{ vars.CF_PAGES_PROJECT }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CF_PAGES_PROJECT VITE_GOOGLE_CLIENT_ID VITE_GOOGLE_API_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing Actions configuration: $name. See docs/deployment.md."
+              exit 1
+            fi
+          done
+      - run: npm ci --ignore-scripts
+      - name: Build production release
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
+        run: npm run build
+      - name: Check release is still current
+        # A slower, older check run must not overwrite a newer master release.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha)
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo '::error::A newer master commit exists; deploy that release instead.'
+            exit 1
+          fi
+      - name: Upload production assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT: ${{ vars.CF_PAGES_PROJECT }}
+        run: npx --yes wrangler@4.156.0 pages deploy dist --project-name="$CF_PAGES_PROJECT" --branch=master --commit-hash="$GITHUB_SHA"
+      - name: Record deployed version
+        run: |
+          echo '### Deployed BuzzQuill version' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat dist/version.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
