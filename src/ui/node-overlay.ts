@@ -36,25 +36,36 @@ function revealStroke(group: SVGGElement, sp: SubPath, spi: number,
   if (!(length > 0)) return;
   // Keep the tail short on screen; never wrap around the beginning of a loop.
   const tail = Math.min(0.18, 36 / (length * zoom));
-  const frames: Keyframe[] = [
-    { offset: 0, strokeDashoffset: String(tail), opacity: 0 },
-    ...distances.map((distance, i) => ({
-      offset: (84 + i * step) / duration,
-      strokeDashoffset: String(tail - distance / length), opacity: 1,
-    })),
-    { offset: 1, strokeDashoffset: String(tail - 1), opacity: 0 },
-  ];
-  // Accent edge + bright core stay readable over light and dark artwork.
-  for (const [stroke, width] of [[ACCENT, '5'], ['white', '2']] as const) {
+  // Overlapping, progressively shorter dashes create a fade ALONG the curve.
+  // A linear SVG gradient would fade in screen space and point the wrong way on
+  // bends or mirrored artwork. Rounded caps soften the small overlapping steps.
+  const layers: { span: number; stroke: string; width: number; alpha: number }[] = Array.from({ length: 12 }, (_, i) => ({
+    span: tail * (1 - i / 12), stroke: ACCENT,
+    width: 2 + 3 * i / 11, alpha: i === 0 ? 0.035 : 0.14,
+  }));
+  layers.push(
+    { span: Math.min(tail / 4, 7 / (length * zoom)), stroke: 'white', width: 2.5, alpha: 0.35 },
+    { span: Math.min(tail / 10, 3 / (length * zoom)), stroke: 'white', width: 2, alpha: 1 },
+  );
+  for (const { span, stroke, width, alpha } of layers) {
+    const frames: Keyframe[] = [
+      { offset: 0, strokeDashoffset: String(span), opacity: 0 },
+      ...distances.map((distance, i) => ({
+        offset: (84 + i * step) / duration,
+        strokeDashoffset: String(span - distance / length), opacity: 1,
+      })),
+      { offset: 1, strokeDashoffset: String(span - 1), opacity: 0 },
+    ];
     const trail = document.createElementNS(NS, 'path');
     trail.setAttribute('d', d);
     trail.setAttribute('fill', 'none');
     trail.setAttribute('stroke', stroke);
-    trail.setAttribute('stroke-width', width);
+    trail.setAttribute('stroke-width', String(width));
+    trail.setAttribute('stroke-opacity', String(alpha));
     trail.setAttribute('stroke-linecap', 'round');
     trail.setAttribute('vector-effect', 'non-scaling-stroke');
     trail.setAttribute('pathLength', '1');
-    trail.setAttribute('stroke-dasharray', `${tail} ${1 + tail}`);
+    trail.setAttribute('stroke-dasharray', `${span} ${1 + tail}`);
     trail.setAttribute('pointer-events', 'none');
     trail.setAttribute('aria-hidden', 'true');
     trail.setAttribute('data-node-direction-stroke', String(spi));
