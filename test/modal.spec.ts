@@ -25,6 +25,7 @@ test('Modal: About dialog opens with proper a11y structure', async ({ page }) =>
   await expect(dialog).toHaveAttribute('aria-modal', 'true');
   await expect(dialog).toHaveClass(/about-dialog/);            // content class applied
   await expect(page.locator('#about-overlay .modal-close')).toBeVisible();
+  await expect(dialog.locator('.about-version')).toContainText(/Version \d{4}\.\d{2}\.\d{2}\.\d{9}-dev/);
   expect(pageErrors).toEqual([]);
 });
 

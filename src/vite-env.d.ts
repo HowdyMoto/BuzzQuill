@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-/** Package version, injected at build time via Vite `define` (see vite.config.ts). */
+/** Calendar release version, injected at build time (local servers end in -dev). */
 declare const __APP_VERSION__: string;
 
 /** Build identity (short commit SHA + ISO date), injected by vite.config.ts. */

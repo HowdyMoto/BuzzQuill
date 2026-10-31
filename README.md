@@ -50,6 +50,10 @@ Disconnect. Use browser site-data controls to clear them on a shared computer.
 
 ## Build and deploy
 
+Production deploys automatically from `master` after GitHub checks pass. See
+[deployment setup and release versioning](docs/deployment.md) for configuration
+and manual redeploys.
+
 ```sh
 npm run build
 npm run preview

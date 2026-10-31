@@ -4,8 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { basename } from 'node:path'
-
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+import { buildIdentity } from './scripts/build-version.ts'
 
 function tryGit(cmd: string): string {
   try { return execSync(cmd).toString().trim() } catch { return '' }
@@ -13,8 +12,7 @@ function tryGit(cmd: string): string {
 // Build identity shown in the About dialog. Cloudflare Pages injects
 // CF_PAGES_COMMIT_SHA in CI; fall back to local git for dev builds. This updates
 // on every push to master with no version-bump commits required.
-const buildSha = (process.env.CF_PAGES_COMMIT_SHA || tryGit('git rev-parse --short HEAD')).slice(0, 7) || 'dev'
-const buildDate = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+const buildSha = process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || tryGit('git rev-parse HEAD')
 
 /**
  * Build the Content-Security-Policy and inject it into index.html (replacing the
@@ -74,11 +72,11 @@ function cspPlugin(isDev: boolean, drive: boolean): Plugin {
 /**
  * Make an INSTALLED PWA reliably pick up a new icon/app version on the next
  * deploy — without the OS taskbar icon or the service-worker cache pinning the
- * old assets. Everything is keyed to `version` (the build SHA, which changes on
- * every push to master), so:
- *   - the SW cache name becomes `buzzquill-<sha>`; its `activate` handler deletes
+ * old assets. Everything is keyed to the calendar build version, which changes
+ * even when the same commit is rebuilt, so:
+ *   - the SW cache name becomes `buzzquill-<version>`; its `activate` handler deletes
  *     every other cache, forcing a fresh fetch of the app shell + icons;
- *   - the manifest icon URLs get `?v=<sha>`, so the browser re-evaluates the PWA
+ *   - the manifest icon URLs get `?v=<version>`, so the browser re-evaluates the PWA
  *     icons when the manifest changes (and the SW treats them as new URLs, not
  *     stale-while-revalidate hits);
  *   - the index.html favicon / apple-touch-icon hrefs get `?v=<sha>` too, so the
@@ -166,14 +164,20 @@ function woff2ToTtfPlugin(): Plugin {
   }
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
+  const identity = buildIdentity(new Date(), buildSha, command === 'serve')
   // Drive is a build-time switch: the CSP opens Google's hosts only when the two
   // public identifiers are present (see .env.example / lib/google-config.ts).
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   const driveConfigured = Boolean(env.VITE_GOOGLE_CLIENT_ID && env.VITE_GOOGLE_API_KEY)
   return {
   base: './',
-  plugins: [woff2ToTtfPlugin(), cspPlugin(mode === 'development', driveConfigured), pwaVersionPlugin(buildSha, mode === 'development')],
+  plugins: [woff2ToTtfPlugin(), cspPlugin(mode === 'development', driveConfigured), pwaVersionPlugin(identity.version, command === 'serve'), {
+    name: 'build-identity',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify(identity, null, 2) + '\n' })
+    },
+  }],
   resolve: {
     alias: {
       // Force every `import 'paper'` (ours + paperjs-offset's) to the CORE build.
@@ -184,11 +188,11 @@ export default defineConfig(({ mode }) => {
       paper: 'paper/dist/paper-core.js',
     },
   },
-  // Surface the package version to the app (shown in the About dialog).
+  // One build identity for About, version.json, and installed-app cache updates.
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-    __BUILD_SHA__: JSON.stringify(buildSha),
-    __BUILD_DATE__: JSON.stringify(buildDate),
+    __APP_VERSION__: JSON.stringify(identity.version),
+    __BUILD_SHA__: JSON.stringify(identity.sha.slice(0, 7)),
+    __BUILD_DATE__: JSON.stringify(identity.builtAt.slice(0, 10)),
   },
   server: {
     port: 5180,
