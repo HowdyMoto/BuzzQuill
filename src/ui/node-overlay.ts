@@ -4,6 +4,9 @@ import type { AppState } from '../core/state';
 
 const NS = 'http://www.w3.org/2000/svg';
 const ACCENT = tokens.selectionAccent;
+// Rendering happens on zoom, selection and drag as well as entry. Keep one
+// timeline per editing session so rebuilding the overlay never restarts it.
+const reveals = new WeakMap<NonNullable<AppState['pathEdit']>, { started: number; canceled: boolean }>();
 
 /**
  * Render the node-editing overlay (anchors + handles for the path being edited)
@@ -40,8 +43,18 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
 
   const A = 3.2 / zoom;   // anchor half-size, constant on screen
   const H = 2.6 / zoom;   // handle knob radius, constant on screen
+  let reveal = reveals.get(session);
+  if (!reveal) {
+    reveal = { started: performance.now(), canceled: false };
+    reveals.set(session, reveal);
+  }
+  if (state.interactive || matchMedia('(prefers-reduced-motion: reduce)').matches) reveal.canceled = true;
+  const elapsed = performance.now() - reveal.started;
 
   session.model.subpaths.forEach((sp, spi) => {
+    // Separate subpaths have separate directions: run them in parallel instead
+    // of suggesting a connecting segment between them. Bound dense-path duration.
+    const step = Math.min(90, 800 / Math.max(1, sp.anchors.length - 1));
     sp.anchors.forEach((a, i) => {
       const selected = session.isSelected(spi, i);
       const ap = tp(a.x, a.y);
@@ -73,6 +86,23 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
           knob.setAttribute('style', 'cursor: crosshair');
           group.appendChild(knob);
         }
+      }
+
+      // Non-interactive halo behind the real anchor. All anchors remain visible
+      // and hittable from the first frame; no geometry or history is changed.
+      const delay = i * step - elapsed;
+      if (!reveal.canceled && delay > -280) {
+        const halo = document.createElementNS(NS, 'circle');
+        halo.setAttribute('cx', String(ap.x)); halo.setAttribute('cy', String(ap.y));
+        halo.setAttribute('r', String(6 / zoom));
+        halo.setAttribute('fill', ACCENT);
+        halo.setAttribute('pointer-events', 'none');
+        halo.setAttribute('aria-hidden', 'true');
+        halo.setAttribute('data-node-direction', `${spi}:${i}`);
+        halo.classList.add('node-direction-pulse');
+        halo.style.animationDelay = `${delay}ms`;
+        halo.addEventListener('animationend', () => halo.remove(), { once: true });
+        group.appendChild(halo);
       }
 
       // Anchor marker: square for corner/broken, diamond for smooth.
