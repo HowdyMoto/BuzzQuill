@@ -342,7 +342,6 @@ export async function saveProject(state: AppState): Promise<void> {
         await writeHandle(handle, svg);
         save.complete(save.source, save.name);
         await rememberRecentFile(handle);
-        showToast(`Saved “${handle.name}”.`, 4000, undefined, 'success');
         if (warnings.length) showToast(warnings.join('\n'));
         return;
       } catch (err) {
@@ -374,7 +373,6 @@ async function saveLocalAs(save: PreparedSave): Promise<void> {
       await writeHandle(handle, svg);
       save.complete({ kind: 'local', handle }, handle.name);
       await rememberRecentFile(handle);
-      showToast(`Saved “${handle.name}”.`, 4000, undefined, 'success');
       if (warnings.length) showToast(warnings.join('\n'));
     } catch (err) {
       alert('Failed to save: ' + (err instanceof Error ? err.message : String(err)));

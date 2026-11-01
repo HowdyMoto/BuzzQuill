@@ -122,6 +122,24 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
   const tab = document.createElement('button');
   tab.className = 'doc-tab' + (selected ? ' active' : '') + (enteringTabIds.has(t.id) ? ' tab-enter' : '');
   tab.dataset.tabId = t.id;
+  const feedback = d.getSaveFeedback(t.id);
+  const completed = feedback?.completed;
+  const saving = d.isSaving(t.id) && completed === undefined;
+  tab.classList.toggle('save-pending', saving);
+  tab.classList.toggle('save-complete', completed !== undefined);
+  tab.title = `${t.title}${saving ? ' — Saving…' : completed !== undefined ? ' — Saved' : t.dirty ? ' — Unsaved changes' : ''}`;
+  if (feedback) {
+    const elapsed = performance.now() - feedback.started;
+    tab.style.setProperty('--save-elapsed', `${-elapsed}ms`);
+    if (completed !== undefined) {
+      tab.style.setProperty('--save-finish-elapsed', `${-(performance.now() - completed)}ms`);
+      tab.style.setProperty('--save-from', String(0.08 + 0.8 * Math.min(1, (completed - feedback.started) / 8000)));
+    }
+    const fill = document.createElement('span');
+    fill.className = 'doc-tab-save-fill';
+    fill.setAttribute('aria-hidden', 'true');
+    tab.appendChild(fill);
+  }
   tab.draggable = true;
   tab.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).tagName === 'INPUT') return; // mid-rename
@@ -134,11 +152,11 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
   // use their cached source.
   const active = t.id === d.activeId;
   const source = active ? getDocSource() : t.source;
-  if (source?.kind === 'local') {
+  if (source?.kind !== 'drive') {
     const badge = document.createElement('span');
     badge.className = 'doc-tab-badge local';
     badge.innerHTML = LOCAL_ICON;
-    badge.title = 'Local file';
+    badge.title = source ? 'Local file' : 'Unsaved document';
     tab.appendChild(badge);
   } else if (source?.kind === 'drive') {
     const badge = document.createElement('span');
@@ -158,12 +176,13 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
   name.className = 'doc-tab-name';
   name.textContent = t.title;
   tab.appendChild(name);
-  if (d.isSaving(t.id)) {
+  if (feedback) {
     const progress = document.createElement('span');
     progress.className = 'doc-tab-saving';
-    progress.textContent = 'Saving…';
+    progress.textContent = saving ? 'Saving…' : t.dirty ? 'Saved copy; newer changes unsaved' : 'Saved';
+    progress.setAttribute('role', 'status');
     tab.appendChild(progress);
-    tab.setAttribute('aria-busy', 'true');
+    if (saving) tab.setAttribute('aria-busy', 'true');
   }
 
 

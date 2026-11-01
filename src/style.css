@@ -1271,23 +1271,30 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   gap: 10px;
 }
 .doc-tab {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  max-width: 200px;
-  font-size: 12px;
-  color: var(--ai-text-dim);
-  background: transparent;
+  gap: 8px;
+  padding: 0 12px;
+  max-width: 260px;
+  min-width: 110px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ai-text);
+  background: var(--ai-panel-dark);
   border: none;
+  border-right: 1px solid var(--ai-border-light);
   border-top: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
 }
 .doc-tab:hover { background: var(--ai-btn-hover); color: var(--ai-text); }
 .doc-tab.active {
-  color: var(--ai-text);
-  background: var(--ai-panel);
+  color: var(--ai-text-bright);
+  background: var(--ai-highlight);
+  font-weight: 600;
   border-top-color: var(--ai-accent);
 }
 /* Category tint: a tab backed by a cloud doc in a category washes that category's
@@ -1298,7 +1305,8 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
   background: color-mix(in srgb, var(--cat-solid) 30%, var(--ai-panel));
   border-top-color: var(--cat-solid);
 }
-.doc-tab .doc-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.doc-tab .doc-tab-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.doc-tab > :not(.doc-tab-save-fill) { position: relative; z-index: 1; }
 /* Category badge — a category name as a coloured pill (fill set inline in JS). */
 .category-badge {
   display: inline-flex; align-items: center;
@@ -1308,6 +1316,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
 }
 /* Identity badge: cloud-backed doc (accent cloud) vs local file (dim page). */
 .doc-tab .doc-tab-badge { display: inline-flex; align-items: center; flex: 0 0 auto; margin-right: -1px; }
+.doc-tab-badge svg { width: 15px; height: 15px; }
 .doc-tab .doc-tab-badge.cloud { color: var(--ai-accent); }
 .doc-tab .doc-tab-badge.local { color: var(--ai-text-dim); }
 .doc-tab.active .doc-tab-badge.local { color: var(--ai-text); }
@@ -4584,7 +4593,6 @@ input, select, textarea {
   to { opacity: 1; translate: 0 0; scale: 1; }
 }
 @keyframes fx-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fx-busy-turn { to { rotate: 1turn; } }
 @media (prefers-reduced-motion: no-preference) {
   .modal-overlay, .cmdk-overlay:not([hidden]), .cpicker-overlay {
     animation: fx-fade-in var(--fx) var(--fx-ease);
@@ -4596,16 +4604,55 @@ input, select, textarea {
 }
 /* Saving is activity, never a success check. The dirty mark remains until the
    captured revision is actually saved. The indicator follows its owning tab. */
-.doc-tab-saving { display: inline-flex; align-items: center; gap: 4px; color: var(--ai-text-dim); font-size: 10px; }
-.doc-tab-saving::before, .drive-status.saving::before {
-  content: ''; display: inline-block; width: 9px; height: 9px;
-  border: 1.5px solid color-mix(in srgb, var(--ai-accent) 25%, transparent);
-  border-top-color: var(--ai-accent); border-radius: 50%;
-  animation: fx-busy-turn 900ms linear infinite;
+.doc-tab .doc-tab-saving {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.drive-status.saving::before { margin-right: 6px; vertical-align: -1px; }
+/* The write APIs expose no byte progress: ease toward a partial fill while
+   pending, and only reach the right edge after the write actually succeeds.
+   Negative delays preserve the timeline across tab-bar rebuilds and switches. */
+.doc-tab-save-fill {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--ai-accent) 24%, transparent);
+  border-bottom: 2px solid var(--ai-accent);
+}
+@keyframes tab-save-progress { from { transform: scaleX(0.08); } to { transform: scaleX(0.88); } }
+.save-pending .doc-tab-save-fill {
+  animation: tab-save-progress 8000ms linear var(--save-elapsed) both;
+}
+@keyframes tab-save-finish {
+  0% { transform: scaleX(var(--save-from)); opacity: 1; }
+  18%, 65% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+.save-complete .doc-tab-save-fill {
+  background: #82dcb526; border-bottom-color: #82dcb5;
+  animation: tab-save-finish 1800ms ease-out var(--save-finish-elapsed) both;
+}
+@keyframes tab-save-celebrate {
+  0%, 18% { transform: translateY(0) rotate(0) scale(1); }
+  26% { transform: translateY(1px) rotate(-12deg) scale(0.85, 1.1); }
+  38% { transform: translateY(-3px) rotate(12deg) scale(1.18); }
+  50% { transform: translateY(0) rotate(-5deg) scale(0.96); }
+  60%, 100% { transform: translateY(0) rotate(0) scale(1); }
+}
+.save-complete .doc-tab-badge {
+  color: #82dcb5;
+  animation: tab-save-celebrate 1800ms ease-out var(--save-finish-elapsed) both;
+}
+.save-complete .doc-tab-badge::after {
+  content: '✓'; position: absolute; right: -5px; bottom: -4px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #82dcb5; color: #172820;
+  font-size: 9px; font-weight: 800; line-height: 11px; text-align: center;
+  animation: tab-save-check 1800ms ease-out var(--save-finish-elapsed) both;
+}
+@keyframes tab-save-check { 0%, 18% { opacity: 0; } 28%, 100% { opacity: 1; } }
 .drive-status { transition: opacity var(--fx) var(--fx-ease), color var(--fx) var(--fx-ease); }
 @media (prefers-reduced-motion: reduce) {
   .ai-switch:active::before { scale: 1; }
-  .doc-tab-saving::before, .drive-status.saving::before { animation: none; }
+  .save-pending .doc-tab-save-fill { animation: none; transform: scaleX(0.55); }
+  .save-complete .doc-tab-save-fill { animation: none; transform: scaleX(1); }
+  .save-complete .doc-tab-badge, .save-complete .doc-tab-badge::after { animation: none; }
 }
