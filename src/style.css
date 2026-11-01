@@ -4267,6 +4267,18 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
   animation: fx-tool-icon 460ms ease-in-out;
 }
 
+/* Read path direction once on entry, without hiding or moving editable nodes. */
+@keyframes node-direction-pulse {
+  0% { opacity: 0; transform: scale(0.5); }
+  30% { opacity: 0.85; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.8); }
+}
+.node-direction-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-direction-pulse 280ms ease-out both;
+}
+
 /* Keyboard focus: a clear accent ring (only shows for keyboard users). */
 button:focus-visible, .tool-btn:focus-visible, .doc-tab:focus-visible,
 .layer-item:focus-visible, .swatch-fill:focus-visible, .swatch-stroke:focus-visible,
@@ -4342,6 +4354,7 @@ input.fx-scrubbing {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  [data-node-direction-stroke] { opacity: 0 !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */

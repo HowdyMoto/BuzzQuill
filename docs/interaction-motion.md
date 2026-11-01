@@ -26,6 +26,11 @@ them for successful exports/saves. Never celebrate a click before work completes
 - Panels, layer creation and new tabs: animate only the state transition, never
   repeated panel rendering. Rows and scrollable toolbar items don't shrink.
 - Switches: a small thumb settle; fields/selects: a ring on valid commit.
+- Point editing: a brief halo passes through anchors in stored path order once
+  per editing session, with a bright stroke tip and fading tail reaching each point at
+  its pulse peak. Subpaths run independently; dense sequences finish within
+  1.08s. Anchors remain visible and interactive, dragging cancels the sequence,
+  and overlay redraws preserve elapsed time instead of replaying it.
 - Local and Drive saves: the owning tab says Saving while work is pending.
   Its unsaved mark remains until the saved revision is confirmed. Failure/cancel
   always clears progress, and changing tabs never moves it to another document.
