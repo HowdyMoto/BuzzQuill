@@ -164,6 +164,7 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
         const halo = document.createElementNS(NS, 'circle');
         halo.setAttribute('cx', String(ap.x)); halo.setAttribute('cy', String(ap.y));
         halo.setAttribute('r', String(6 / zoom));
+        halo.style.setProperty('--node-pulse-radius', `${6 / zoom}px`);
         halo.setAttribute('fill', ACCENT);
         halo.setAttribute('pointer-events', 'none');
         halo.setAttribute('aria-hidden', 'true');

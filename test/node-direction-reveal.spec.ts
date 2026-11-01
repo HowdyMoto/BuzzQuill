@@ -61,6 +61,42 @@ test('anchors can be dragged immediately and the reveal stops', async ({ page })
   await expect(page.locator('[data-node-direction]')).toHaveCount(0);
 });
 
+test('point reveal leaves nearby raster pixels unchanged', async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 100;
+    const ctx = canvas.getContext('2d')!;
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) {
+      ctx.fillStyle = (x + y) % 2 ? '#2385c7' : '#f6a72c';
+      ctx.fillRect(x * 10, y * 10, 10, 10);
+    }
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.id = 'raster-reveal-test';
+    img.setAttribute('href', canvas.toDataURL());
+    img.setAttribute('x', '120'); img.setAttribute('y', '100');
+    img.setAttribute('width', '100'); img.setAttribute('height', '100');
+    document.getElementById((window as any).state.artboards[0].id)!.append(img);
+    (window as any).state.rebuildShapesFromDOM();
+  });
+  const raster = page.locator('#raster-reveal-test');
+  const before = await raster.screenshot();
+  await page.keyboard.press('a');
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-node-overlay] *').forEach(el => {
+      el.getAnimations().forEach(animation => animation.pause());
+    });
+  });
+  for (const time of [40, 84, 180, 300]) {
+    await page.evaluate(time => {
+      document.querySelectorAll('[data-node-overlay] *').forEach(el => {
+        el.getAnimations().forEach(animation => { animation.currentTime = time; });
+      });
+    }, time);
+    expect((await raster.screenshot({ animations: 'allow' })).equals(before)).toBe(true);
+  }
+});
+
 test('dense paths finish promptly; reduced motion shows editable anchors immediately', async ({ page }) => {
   await setup(page, 'M 260 80 ' + Array.from({ length: 100 }, (_, i) => `L ${261 + i} ${80 + i % 2}`).join(' '));
   await page.keyboard.press('a');

@@ -4269,13 +4269,13 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
 
 /* Read path direction once on entry, without hiding or moving editable nodes. */
 @keyframes node-direction-pulse {
-  0% { opacity: 0; transform: scale(0.5); }
-  30% { opacity: 0.85; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.8); }
+  0% { opacity: 0; r: calc(var(--node-pulse-radius) * 0.5); }
+  30% { opacity: 0.85; r: var(--node-pulse-radius); }
+  100% { opacity: 0; r: calc(var(--node-pulse-radius) * 1.8); }
 }
 .node-direction-pulse {
-  transform-box: fill-box;
-  transform-origin: center;
+  /* Animate SVG geometry in its own coordinate space. Transform animations on
+     these tiny SVG children can cause raster siblings to flash during compositing. */
   animation: node-direction-pulse 280ms ease-out both;
 }
 
