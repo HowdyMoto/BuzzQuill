@@ -142,7 +142,7 @@ test.describe('Google Drive', () => {
     await dirty(page);
 
     await fileMenu(page, 'file.save');
-    await expect(page.locator('.toast.success', { hasText: 'to Google Drive' }).last()).toBeVisible();
+    await expect(page.locator('.doc-tab.save-complete').first()).toBeVisible();
     await expect(page.locator('#drive-status')).toHaveText('');
     const patch = mock.calls.find((c) => c.method === 'PATCH');
     expect(patch).toBeTruthy();
@@ -174,7 +174,7 @@ test.describe('Google Drive', () => {
     // Overwrite path: the write goes through without the precheck.
     await fileMenu(page, 'file.save');
     await page.locator('.modal-dialog button', { hasText: 'Overwrite' }).click();
-    await expect(page.locator('.toast.success', { hasText: 'to Google Drive' }).last()).toBeVisible();
+    await expect(page.locator('.doc-tab.save-complete').first()).toBeVisible();
     await expect(page.locator('#drive-status')).toHaveText('');
     expect(mock.calls.some((c) => c.method === 'PATCH')).toBe(true);
     expect(await page.evaluate(() => (window as unknown as W).state.dirty)).toBe(false);
@@ -205,7 +205,7 @@ test.describe('Google Drive', () => {
     await expect(dlg).toBeVisible();
     await dlg.locator('input').fill('Poster');
     await dlg.locator('button', { hasText: 'Save' }).click();
-    await expect(page.locator('.toast.success', { hasText: 'to Google Drive' }).last()).toBeVisible();
+    await expect(page.locator('.doc-tab.save-complete').first()).toBeVisible();
     await expect(page.locator('#drive-status')).toHaveText('');
     const post = mock.calls.find((c) => c.method === 'POST');
     expect(post!.url).toContain('/upload/drive/v3/files?uploadType=multipart');
@@ -293,7 +293,7 @@ for (const saveAs of [false, true]) {
       return { id: w.docs.activeId, title: document.title, source: w.docs.activeSource };
     });
     release();
-    await expect(page.locator('.toast.success', { hasText: 'to Google Drive' }).last()).toBeVisible();
+    await expect(page.locator('.doc-tab.save-complete').first()).toBeVisible();
     const after = await page.evaluate(() => {
       const w = window as unknown as W & { docs: { activeId: string; activeSource: unknown } };
       return { id: w.docs.activeId, title: document.title, source: w.docs.activeSource };
@@ -317,7 +317,7 @@ test('Editing during a Drive upload remains dirty after completion', async ({ pa
   await expect.poll(() => mock.calls.filter(c => c.method === 'PATCH').length).toBe(1);
   await page.evaluate(() => (window as unknown as W).state.setSelectionOpacity(0.7, true));
   release();
-  await expect(page.locator('.toast.success', { hasText: 'to Google Drive' }).last()).toBeVisible();
+  await expect(page.locator('.doc-tab.save-complete').first()).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as W).state.dirty)).toBe(true);
 });
 
@@ -338,7 +338,7 @@ test('Save captures its document before Google sign-in and ignores duplicate sav
   await page.evaluate(() => (window as any).finishSignIn());
   await page.locator('.modal-dialog input').fill('Original.svg');
   await page.locator('.modal-dialog button', { hasText: /^Save$/ }).click();
-  await expect(page.locator('.toast.success', { hasText: 'Original.svg' })).toBeVisible();
+  await expect(page.locator('.doc-tab.save-complete', { hasText: 'Original.svg' })).toBeVisible();
   const writes = mock.calls.filter(c => c.method === 'POST');
   expect(writes).toHaveLength(1);
   expect(writes[0].body).toContain('shape-1');

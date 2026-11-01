@@ -35,7 +35,8 @@ test('a fresh document has no source; renaming a tab renames only the document',
   await boot(page);
 
   expect(await page.evaluate(() => (window as unknown as DocsWindow).docs.activeSource)).toBeNull();
-  await expect(page.locator('.doc-tab .doc-tab-badge')).toHaveCount(0);
+  await expect(page.locator('.doc-tab .doc-tab-badge')).toHaveCount(1);
+  await expect(page.locator('.doc-tab .doc-tab-badge')).toHaveAttribute('title', 'Unsaved document');
 
   await page.evaluate(() => {
     const { docs } = window as unknown as DocsWindow;

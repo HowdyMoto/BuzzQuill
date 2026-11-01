@@ -39,11 +39,10 @@ export { isDriveConnected, canDisconnectDrive };
 
 // ---- Status chip ------------------------------------------------------------
 
-// The chip covers the upload in flight and the problems; a finished save is
-// confirmed by a toast instead, the same one for ⌘S and Save to Google Drive….
-type ChipState = 'hidden' | 'saving' | 'error' | 'reconnect';
+// Save progress and completion live on the owning document tab. This chip
+// retains actionable connection and upload errors.
+type ChipState = 'hidden' | 'error' | 'reconnect';
 const CHIP_TEXT: Record<Exclude<ChipState, 'hidden'>, string> = {
-  saving: 'Saving to Drive…',
   error: 'Not saved to Drive',
   reconnect: 'Reconnect Google Drive',
 };
@@ -54,7 +53,6 @@ function setChip(state: ChipState): void {
   if (!chip) return;
   chip.className = 'drive-status' + (state === 'hidden' ? '' : ` show ${state}`);
   chip.textContent = state === 'hidden' ? '' : CHIP_TEXT[state];
-  chip.setAttribute('aria-busy', String(state === 'saving'));
   chip.disabled = state !== 'reconnect';
 }
 
@@ -169,7 +167,7 @@ export async function saveToDrive(state: AppState): Promise<void> {
     if (!(await ensureToken())) { setChip('reconnect'); askToConnect(); return; }
     const { svg, warnings } = await save.content();
     if (!save.isOpen()) return;
-    setChip('saving');
+    setChip('hidden');
     let saved: DriveFile;
     try {
       saved = await updateFile(src.fileId, svg, src.modifiedTime);
@@ -183,7 +181,6 @@ export async function saveToDrive(state: AppState): Promise<void> {
         confirmText: 'Overwrite', cancelText: 'Keep editing', danger: true,
       });
       if (!overwrite || !save.isOpen()) return;
-      setChip('saving');
       saved = await updateFile(src.fileId, svg);
     }
     landed(save, saved, warnings);
@@ -205,7 +202,7 @@ export async function saveToDriveAs(state: AppState): Promise<void> {
     name = /\.svg$/i.test(typed) ? typed : `${typed}.svg`;
     const { svg, warnings } = await save.content();
     if (!save.isOpen()) return;
-    setChip('saving');
+    setChip('hidden');
     const saved = await createFile(name, svg);
     landed(save, saved, warnings);
   } catch (err) { failed(err, name); }
@@ -216,7 +213,6 @@ function landed(save: NonNullable<ReturnType<typeof beginDocumentSave>>, saved: 
   save.complete({ kind: 'drive', fileId: saved.id, name: saved.name, modifiedTime: saved.modifiedTime }, saved.name);
   rememberDriveFile({ id: saved.id, name: saved.name });
   setChip('hidden');
-  showToast(`Saved “${saved.name}” to Google Drive.`, 4000, undefined, 'success');
   if (warnings.length) showToast(warnings.join('\n'));
 }
 
