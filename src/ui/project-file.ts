@@ -433,7 +433,14 @@ export async function pendingFromPdfFile(file: File): Promise<PendingOpen | null
 /** Build a prompt-free loader for an already-obtained handle (Open dialog or
  *  Recent Files). Resolves the PDF import choice up front; null if cancelled. */
 export async function pendingFromHandle(handle: FileSystemFileHandle): Promise<PendingOpen | null> {
-  if (/\.pdf$/i.test(handle.name)) return pendingFromPdfFile(await handle.getFile());
+  if (/\.pdf$/i.test(handle.name)) {
+    const pending = await pendingFromPdfFile(await handle.getFile());
+    if (!pending) return null;
+    return { name: pending.name, load: async (state) => {
+      await pending.load(state);
+      await rememberRecentFile(handle);
+    } };
+  }
   return { name: handle.name, load: (s) => openHandle(s, handle) };
 }
 

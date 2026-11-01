@@ -31,10 +31,11 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 async function readAll(): Promise<RecentEntry[]> {
+  let db: IDBDatabase | undefined;
   try {
-    const db = await openDB();
+    db = await openDB();
     const entries = await new Promise<RecentEntry[]>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
+      const tx = db!.transaction(STORE, 'readonly');
       const req = tx.objectStore(STORE).getAll();
       req.onsuccess = () => resolve(req.result as RecentEntry[]);
       req.onerror = () => reject(req.error);
@@ -42,22 +43,46 @@ async function readAll(): Promise<RecentEntry[]> {
     return entries.sort((a, b) => b.ts - a.ts);
   } catch {
     return [];
+  } finally {
+    db?.close();
   }
 }
 
 export async function rememberRecentFile(handle: FileSystemFileHandle): Promise<void> {
+  let db: IDBDatabase | undefined;
   try {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
-    // Timestamp comes from the runtime gesture; Date.now is fine here (UI code).
-    store.put({ key: handle.name, name: handle.name, handle, ts: Date.now() } as RecentEntry);
-    // Trim to the most-recent MAX_RECENT.
-    const all = await readAll();
-    for (const old of all.slice(MAX_RECENT)) store.delete(old.key);
-    refreshRecentMenu();
+    db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db!.transaction(STORE, 'readwrite');
+      const store = tx.objectStore(STORE);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+      // Read and trim in this transaction's request callback. Awaiting a read
+      // from another transaction lets this one commit before deletes are queued.
+      const req = store.getAll();
+      req.onsuccess = () => {
+        try {
+          const all = (req.result as RecentEntry[]).sort((a, b) => b.ts - a.ts);
+          // Keep a reopened file first even if two opens share a timestamp.
+          const ts = Math.max(Date.now(), (all[0]?.ts ?? 0) + 1);
+          store.put({ key: handle.name, name: handle.name, handle, ts } as RecentEntry);
+          for (const old of all.filter(e => e.key !== handle.name).slice(MAX_RECENT - 1)) {
+            store.delete(old.key);
+          }
+        } catch (error) {
+          // Request callbacks run outside the surrounding try/catch. A handle
+          // that cannot be persisted must not break opening or saving a file.
+          tx.abort();
+          reject(error);
+        }
+      };
+    });
+    await refreshRecentMenu();
   } catch {
     /* IndexedDB unavailable — recent files just won't persist. */
+  } finally {
+    db?.close();
   }
 }
 
@@ -98,6 +123,9 @@ async function refreshRecentMenu(): Promise<void> {
 
   for (const entry of entries) {
     const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.tabIndex = -1;
     btn.textContent = entry.name;
     btn.title = entry.name;
     btn.addEventListener('click', async () => {
