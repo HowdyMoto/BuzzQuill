@@ -146,8 +146,8 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
     d.focusTab(t.id);
   });
 
-  // Identity badge: where does this doc live? (A blank or never-saved tab has no
-  // source and gets no badge.) The ACTIVE tab's live source is the doc-source
+  // Identity badge: where does this doc live? A never-saved tab uses the page
+  // glyph too, so its first save can celebrate. The ACTIVE tab's source is the doc-source
   // singleton (its DocTab cache is only refreshed on switch-away); inactive tabs
   // use their cached source.
   const active = t.id === d.activeId;
