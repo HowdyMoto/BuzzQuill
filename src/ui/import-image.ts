@@ -172,6 +172,9 @@ export function placeImageDataUrl(state: AppState, dataUrl: string, at?: Point):
     el.setAttribute('href', dataUrl);
     el.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
+    // A raster has no editable points. Leave the previous tool/session so the
+    // newly selected image can be moved immediately, including after A or crop.
+    state.requestTool?.('select');
     state.addShape({
       id,
       type: 'image',
