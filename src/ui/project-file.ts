@@ -219,6 +219,9 @@ export function loadDocumentSVG(state: AppState, svgString: string): void {
   const svgEl = doc.querySelector('svg');
   if (!svgEl) throw new Error('File is not a valid SVG.');
 
+  // A point edit left open would point at a shape in the document being replaced.
+  state.exitPathEdit();
+
   // Look for our embedded editor metadata.
   let meta: DocMeta | null = null;
   const metaEl = svgEl.querySelector('metadata.svgmaker-state') ?? svgEl.querySelector('metadata');
