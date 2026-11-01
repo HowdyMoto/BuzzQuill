@@ -428,6 +428,7 @@ document.querySelectorAll('.panel-header').forEach(header => {
 
 // Keyboard shortcuts
 let prevToolBeforeSpace: ToolName | null = null;
+let nodeReturnBeforeSpace: ToolName | null = null;
 
 window.addEventListener('keydown', (e: KeyboardEvent) => {
   const target = e.target as HTMLElement;
@@ -456,6 +457,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
     e.preventDefault();
     if (state.currentTool !== 'hand') {
       prevToolBeforeSpace = state.currentTool;
+      nodeReturnBeforeSpace = state.nodeEditReturnTool; // leaving the node tool clears it
       setTool('hand');
     }
     return;
@@ -487,8 +489,14 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
 /** Leave spring-loaded pan and restore the tool that was active before Space. */
 function endSpacePan(): void {
   if (prevToolBeforeSpace) {
+    // A point edit entered from Select is still "from Select" after a pan. Losing that
+    // left the node tool active once the edit ended, where a press only selects.
+    state.nodeEditReturnTool = nodeReturnBeforeSpace;
     setTool(prevToolBeforeSpace);
     prevToolBeforeSpace = null;
+    // The selection may have changed mid-pan, leaving no edit to reopen: go back now.
+    if (nodeReturnBeforeSpace && !state.editingPathId) setTool(nodeReturnBeforeSpace);
+    nodeReturnBeforeSpace = null;
   }
 }
 
