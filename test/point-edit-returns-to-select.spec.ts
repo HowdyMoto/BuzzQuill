@@ -155,3 +155,110 @@ test('a node tool picked directly stays put when its edit ends', async ({ page }
   expect(await toolState(page)).toEqual({ tool: 'directSelect', editing: null, lit: [] });
   expect(errors).toEqual([]);
 });
+
+/** Hold Space and let go, as a pan does. `during` runs while it's held. */
+async function springPan(page: Page, during?: () => Promise<void>): Promise<void> {
+  await page.keyboard.down(' ');
+  await expect.poll(async () => (await toolState(page)).tool).toBe('hand');
+  await during?.();
+  await page.keyboard.up(' ');
+}
+
+test('a pan mid-edit keeps the edit, and it still ends back in Select', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+
+  await enterPointEdit(page, a);
+  await springPan(page);
+  expect(await toolState(page)).toEqual({ tool: 'directSelect', editing: a, lit: [] });
+  await page.keyboard.press('Escape');
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+
+  await enterPointEdit(page, a);
+  await springPan(page);
+  await page.locator('#svg-canvas').click({ position: { x: 20, y: 20 } });
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  expect(errors).toEqual([]);
+});
+
+test('a pan that leaves nothing to edit lands in Select', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+  await enterPointEdit(page, a);
+
+  // The frame can't be point-edited, so there is no edit to reopen on release.
+  await springPan(page, () => page.locator('.layer-item', { hasText: 'Frame' }).first().click());
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  expect(errors).toEqual([]);
+});
+
+test('a pan in a node tool picked directly stays in it', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+  await page.locator('#svg-canvas').click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press('a');
+  const c = await centreOf(page, a);
+  await page.mouse.dblclick(c.x, c.y);
+  await expect.poll(async () => (await toolState(page)).editing).toBe(a);
+
+  await springPan(page);
+  expect(await toolState(page)).toEqual({ tool: 'directSelect', editing: a, lit: [] });
+  await page.keyboard.press('Escape');
+  expect(await toolState(page)).toEqual({ tool: 'directSelect', editing: null, lit: [] });
+  expect(errors).toEqual([]);
+});
+
+test('a new tab ends the edit back in Select, and the new document works', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+  await enterPointEdit(page, a);
+
+  await page.locator('#tab-new').click();
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  const moved = await pasteAndDrag(page);
+  expect(moved).toBeGreaterThan(40);
+  expect(errors).toEqual([]);
+});
+
+test('switching tabs ends the edit back in Select, in both directions', async ({ page }) => {
+  const errors = await boot(page);
+  await page.locator('#tab-new').click();
+  const [a] = await addTwoPaths(page);
+  await enterPointEdit(page, a);
+
+  await page.locator('#tab-list > *').first().click();
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  await page.locator('#tab-list > *').last().click();
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  expect(errors).toEqual([]);
+});
+
+test('a new tab in a node tool picked directly stays in it, with no edit open', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+  await page.locator('#svg-canvas').click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press('a');
+  const c = await centreOf(page, a);
+  await page.mouse.dblclick(c.x, c.y);
+  await expect.poll(async () => (await toolState(page)).editing).toBe(a);
+
+  await page.locator('#tab-new').click();
+  expect(await toolState(page)).toEqual({ tool: 'directSelect', editing: null, lit: [] });
+  expect(errors).toEqual([]);
+});
+
+test('opening a file over the current document ends the edit back in Select', async ({ page }) => {
+  const errors = await boot(page);
+  const [a] = await addTwoPaths(page);
+  await enterPointEdit(page, a);
+
+  await page.evaluate(async () => {
+    const m = await import('/src/ui/project-file.ts');
+    m.loadDocumentSVG(
+      (window as unknown as { state: AnyState }).state,
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 10 H90 V90 Z"/></svg>',
+    );
+  });
+  expect(await toolState(page)).toEqual(BACK_IN_SELECT);
+  expect(errors).toEqual([]);
+});

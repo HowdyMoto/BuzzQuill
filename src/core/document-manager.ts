@@ -385,9 +385,12 @@ export class DocumentManager {
   /** A crop session edits one document's element through an overlay. Swapping the
    *  document out from under it left the overlay drawn over the next tab, where
    *  Enter committed into the wrong document. End it first — a tool switch keeps
-   *  the crop, as it always does — so the outgoing tab saves the finished result. */
+   *  the crop, as it always does — so the outgoing tab saves the finished result.
+   *  A point edit is the same: it holds a shape id from the outgoing document, which
+   *  the next tab's shape-N ids can collide with. */
   private endToolSession(): void {
     if (this.state.currentTool === 'crop') this.state.requestTool?.('select');
+    this.state.exitPathEdit();
   }
 
   switchTo(id: string): void {
