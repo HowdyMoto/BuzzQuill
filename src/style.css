@@ -4285,8 +4285,15 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
 .node-direction-pulse {
   /* Animate SVG geometry in its own coordinate space. Transform animations on
      these tiny SVG children can cause raster siblings to flash during compositing. */
-  animation: node-direction-pulse 280ms ease-out both;
+  animation: node-direction-pulse 400ms ease-out both;
 }
+
+@keyframes node-direction-arrow {
+  0% { opacity: 0; }
+  15%, 65% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.node-direction-arrow { animation: node-direction-arrow 900ms ease-out both; }
 
 /* Keyboard focus: a clear accent ring (only shows for keyboard users). */
 button:focus-visible, .tool-btn:focus-visible, .doc-tab:focus-visible,

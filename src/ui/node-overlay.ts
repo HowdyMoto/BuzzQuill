@@ -9,71 +9,47 @@ const ACCENT = tokens.selectionAccent;
 // timeline per editing session so rebuilding the overlay never restarts it.
 const reveals = new WeakMap<NonNullable<AppState['pathEdit']>, { started: number; canceled: boolean }>();
 
-/** A short stroke highlight whose head reaches each anchor at its pulse peak.
- * Measure each mapped curve separately so unequal segment lengths and transforms
- * do not desynchronize the stroke from the evenly staggered point pulses.
+/** Show the initial tangent at each subpath's first anchor, in screen-sized units.
+ * The first noncoincident control point gives the cubic's starting direction,
+ * including collapsed handles or zero-length leading segments.
  */
-function revealStroke(group: SVGGElement, sp: SubPath, spi: number,
+function revealArrow(group: SVGGElement, sp: SubPath, spi: number,
   map: (x: number, y: number) => { x: number; y: number },
-  step: number, elapsed: number, zoom: number): void {
+  elapsed: number, zoom: number): void {
+  if (sp.anchors.length < 2 || elapsed >= 900) return;
+  const first = sp.anchors[0];
+  const origin = map(first.x, first.y);
+  let direction: { x: number; y: number } | undefined;
   const count = sp.closed ? sp.anchors.length : sp.anchors.length - 1;
-  const duration = count * step + 280;
-  if (count < 1 || elapsed >= duration) return;
-  const point = (x: number, y: number) => { const p = map(x, y); return `${p.x} ${p.y}`; };
-  let d = `M ${point(sp.anchors[0].x, sp.anchors[0].y)}`;
-  const distances = [0];
-  const measure = document.createElementNS(NS, 'path');
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count && !direction; i++) {
     const a = sp.anchors[i], b = sp.anchors[(i + 1) % sp.anchors.length];
-    const segment = a.outX === undefined && b.inX === undefined
-      ? `L ${point(b.x, b.y)}`
-      : `C ${point(a.outX ?? a.x, a.outY ?? a.y)} ${point(b.inX ?? b.x, b.inY ?? b.y)} ${point(b.x, b.y)}`;
-    measure.setAttribute('d', `M ${point(a.x, a.y)} ${segment}`);
-    distances.push(distances[i] + measure.getTotalLength());
-    d += ` ${segment}`;
+    for (const [x, y] of [[a.outX ?? a.x, a.outY ?? a.y],
+      [b.inX ?? b.x, b.inY ?? b.y], [b.x, b.y]]) {
+      const p = map(x, y);
+      const dx = p.x - origin.x, dy = p.y - origin.y;
+      const length = Math.hypot(dx, dy);
+      if (length > 1e-6) { direction = { x: dx / length, y: dy / length }; break; }
+    }
   }
-  const length = distances[count];
-  if (!(length > 0)) return;
-  // Keep the tail short on screen; never wrap around the beginning of a loop.
-  const tail = Math.min(0.18, 36 / (length * zoom));
-  // Overlapping, progressively shorter dashes create a fade ALONG the curve.
-  // A linear SVG gradient would fade in screen space and point the wrong way on
-  // bends or mirrored artwork. Rounded caps soften the small overlapping steps.
-  const layers: { span: number; stroke: string; width: number; alpha: number }[] = Array.from({ length: 12 }, (_, i) => ({
-    span: tail * (1 - i / 12), stroke: ACCENT,
-    width: 2 + 3 * i / 11, alpha: i === 0 ? 0.035 : 0.14,
-  }));
-  layers.push(
-    { span: Math.min(tail / 4, 7 / (length * zoom)), stroke: 'white', width: 2.5, alpha: 0.35 },
-    { span: Math.min(tail / 10, 3 / (length * zoom)), stroke: 'white', width: 2, alpha: 1 },
-  );
-  for (const { span, stroke, width, alpha } of layers) {
-    const frames: Keyframe[] = [
-      { offset: 0, strokeDashoffset: String(span), opacity: 0 },
-      ...distances.map((distance, i) => ({
-        offset: (84 + i * step) / duration,
-        strokeDashoffset: String(span - distance / length), opacity: 1,
-      })),
-      { offset: 1, strokeDashoffset: String(span - 1), opacity: 0 },
-    ];
-    const trail = document.createElementNS(NS, 'path');
-    trail.setAttribute('d', d);
-    trail.setAttribute('fill', 'none');
-    trail.setAttribute('stroke', stroke);
-    trail.setAttribute('stroke-width', String(width));
-    trail.setAttribute('stroke-opacity', String(alpha));
-    trail.setAttribute('stroke-linecap', 'round');
-    trail.setAttribute('vector-effect', 'non-scaling-stroke');
-    trail.setAttribute('pathLength', '1');
-    trail.setAttribute('stroke-dasharray', `${span} ${1 + tail}`);
-    trail.setAttribute('pointer-events', 'none');
-    trail.setAttribute('aria-hidden', 'true');
-    trail.setAttribute('data-node-direction-stroke', String(spi));
-    group.appendChild(trail);
-    const animation = trail.animate(frames, { duration, easing: 'linear', fill: 'both' });
-    animation.currentTime = elapsed;
-    animation.onfinish = () => trail.remove();
-  }
+  if (!direction) return;
+  const point = (along: number, across = 0) =>
+    `${origin.x + (direction.x * along - direction.y * across) / zoom} ${origin.y + (direction.y * along + direction.x * across) / zoom}`;
+  const arrow = document.createElementNS(NS, 'path');
+  // Leave room for the anchor and its halo; the arrow stays fixed as it fades.
+  arrow.setAttribute('d', `M ${point(10)} L ${point(32)} M ${point(25, -5)} L ${point(32)} L ${point(25, 5)}`);
+  arrow.setAttribute('fill', 'none');
+  arrow.setAttribute('stroke', ACCENT);
+  arrow.setAttribute('stroke-width', '2.5');
+  arrow.setAttribute('stroke-linecap', 'round');
+  arrow.setAttribute('stroke-linejoin', 'round');
+  arrow.setAttribute('vector-effect', 'non-scaling-stroke');
+  arrow.setAttribute('pointer-events', 'none');
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.setAttribute('data-node-direction-arrow', String(spi));
+  arrow.classList.add('node-direction-arrow');
+  arrow.style.animationDelay = `${-elapsed}ms`;
+  arrow.addEventListener('animationend', () => arrow.remove(), { once: true });
+  group.appendChild(arrow);
 }
 
 /**
@@ -120,10 +96,8 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
   const elapsed = performance.now() - reveal.started;
 
   session.model.subpaths.forEach((sp, spi) => {
-    // Separate subpaths have separate directions: run them in parallel instead
-    // of suggesting a connecting segment between them. Bound dense-path duration.
-    const step = Math.min(90, 800 / Math.max(1, sp.anchors.length - (sp.closed ? 0 : 1)));
-    if (!reveal.canceled) revealStroke(group, sp, spi, tp, step, elapsed, zoom);
+    // Each disconnected subpath has its own start and direction.
+    if (!reveal.canceled) revealArrow(group, sp, spi, tp, elapsed, zoom);
     sp.anchors.forEach((a, i) => {
       const selected = session.isSelected(spi, i);
       const ap = tp(a.x, a.y);
@@ -159,8 +133,8 @@ export function renderNodeOverlay(state: AppState, guidesLayer: SVGGElement, zoo
 
       // Non-interactive halo behind the real anchor. All anchors remain visible
       // and hittable from the first frame; no geometry or history is changed.
-      const delay = i * step - elapsed;
-      if (!reveal.canceled && delay > -280) {
+      const delay = -elapsed;
+      if (!reveal.canceled && delay > -400) {
         const halo = document.createElementNS(NS, 'circle');
         halo.setAttribute('cx', String(ap.x)); halo.setAttribute('cy', String(ap.y));
         halo.setAttribute('r', String(6 / zoom));
