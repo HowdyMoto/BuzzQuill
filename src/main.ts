@@ -437,15 +437,6 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
   // must not also trigger the global editor shortcut for it.
   if (e.defaultPrevented) return;
 
-  // Node editing: Delete/Backspace removes the selected anchor points, not the
-  // whole path — so it can't go through the registry's edit.delete command.
-  if ((e.key === 'Delete' || e.key === 'Backspace') &&
-      state.editingPathId && state.pathEdit && state.pathEdit.selected.size > 0) {
-    e.preventDefault();
-    if (activeTool.onKeyDown) activeTool.onKeyDown(e);
-    return;
-  }
-
   // Spring-loaded pan: holding Space temporarily switches to the Hand tool and
   // restores the previous tool on keyup (handled below). Stateful, so bespoke.
   // Re-assert Hand on EVERY Space keydown (idempotent) rather than gating on a
