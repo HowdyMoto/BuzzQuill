@@ -13,7 +13,7 @@ import { openSolidColorPicker } from './color-picker';
 import { exportArtboardToFile, changeExportFolder } from './export-dialog';
 import { playExportSequence } from './feedback';
 import { rememberedExportDirName, hasRememberedExportDir, forgetExportDir } from '../core/export-store';
-import { setToggle } from './components';
+import { createSelect, setToggle } from './components';
 import { showContextMenu } from './panel-helpers';
 
 import { mustId as $, bindLiveCommit } from './dom';
@@ -240,14 +240,14 @@ const EXPORT_PRESETS: Record<string, ExportTarget[]> = {
   ],
 };
 
-let committingTargetName = false;
+let committingTargetControl = false;
 
 /** Rebuild the target rows only when it's safe — never while a field inside the
  *  list is focused (that would yank the input mid-edit). Undo/redo and selection
  *  changes rebuild normally because nothing in the list is focused then. */
 function syncExportTargets(state: AppState, fid: string): void {
   const list = document.getElementById('fp-export-list');
-  if (committingTargetName || (list && list.contains(document.activeElement))) return;
+  if (committingTargetControl || (list && list.contains(document.activeElement))) return;
   buildExportRows(state, fid);
 }
 
@@ -389,7 +389,13 @@ function buildExportRows(state: AppState, fid: string): void {
   const targets = state.getFrameExportTargets(fid);
   list.replaceChildren();
 
-  const commit = (record: boolean) => state.setFrameExportTargets(fid, targets, record);
+  const commit = (record: boolean) => {
+    // These controls update themselves. Keep them alive through blur so a press
+    // on the next control can complete instead of losing its click to a rebuild.
+    committingTargetControl = true;
+    try { state.setFrameExportTargets(fid, targets, record); }
+    finally { committingTargetControl = false; }
+  };
 
   targets.forEach((t, i) => {
     const row = document.createElement('div');
@@ -410,8 +416,7 @@ function buildExportRows(state: AppState, fid: string): void {
       name.value = t.name; name.title = `${t.name}.${t.format}`;
       // The field already displays the committed value. Preserve the row while
       // focus moves to another control, so its pending click is not swallowed.
-      committingTargetName = true;
-      try { commit(true); } finally { committingTargetName = false; }
+      commit(true);
     });
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
 
@@ -437,18 +442,20 @@ function buildExportRows(state: AppState, fid: string): void {
       })));
     });
 
+    const outputPx = () => resolvedPx(t, ab ? exportRect(state, ab, t.bounds).rect : undefined);
+
     // Size — one smart field: "2×", "512", or "512×512".
     const size = document.createElement('input');
     size.className = 'fp-target-size';
     size.type = 'text';
     size.value = formatSize(t);
     size.placeholder = '1×';
-    size.title = `Size — type 2×, 512, or 512×512  ·  → ${resolvedPx(t, ab)}`;
+    size.title = `Size — type 2×, 512, or 512×512  ·  → ${outputPx()}`;
     const applySize = (record: boolean) => {
       const parsed = parseSize(size.value);
       if (!parsed) return;
       t.scale = parsed.scale; t.width = parsed.width; t.height = parsed.height;
-      size.title = `Size — type 2×, 512, or 512×512  ·  → ${resolvedPx(t, ab)}`;
+      size.title = `Size — type 2×, 512, or 512×512  ·  → ${outputPx()}`;
       commit(record);
     };
     size.addEventListener('input', () => applySize(false));
@@ -458,7 +465,7 @@ function buildExportRows(state: AppState, fid: string): void {
     // Keep the compact size summary in sync with the expanded size controls.
     const syncCollapsed = () => {
       name.value = t.name; name.title = `${t.name}.${t.format}`;
-      size.value = formatSize(t); size.title = `Size — type 2×, 512, or 512×512  ·  → ${resolvedPx(t, ab)}`;
+      size.value = formatSize(t); size.title = `Size — type 2×, 512, or 512×512  ·  → ${outputPx()}`;
     };
     const renderOpts = () => buildTargetOptions(state, t, opts, { ab, commit, syncCollapsed });
 
@@ -526,12 +533,27 @@ interface TargetOptCtx {
  *  collapsed row via ctx.syncCollapsed. */
 function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLElement, ctx: TargetOptCtx): void {
   container.replaceChildren();
-  const commit = (record = true) => ctx.commit(record);
+  const commit = (record = true) => { ctx.commit(record); refreshOutput(); };
+  const measured = ctx.ab ? exportRect(state, ctx.ab, t.bounds) : undefined;
+  const output = document.createElement('div'); output.className = 'fp-opt-caption';
+  const refreshOutput = () => {
+    output.textContent = `Output ${resolvedPx(t, measured?.rect)}`;
+    const width = container.querySelector<HTMLInputElement>('input[aria-label="Width"]');
+    const height = container.querySelector<HTMLInputElement>('input[aria-label="Height"]');
+    const aspect = measured ? measured.rect.width / measured.rect.height || 1 : 1;
+    if (width && !t.width) width.placeholder = String(Math.round((t.height ?? 1) * aspect));
+    if (height && !t.height) height.placeholder = String(Math.round((t.width ?? 1) / aspect));
+    output.title = measured?.note ?? (t.bounds === 'paths' ? 'Based on the current visible paths; strokes are not included.' : 'Based on the frame dimensions.');
+  };
   const rerender = () => buildTargetOptions(state, t, container, ctx);
 
   const optRow = (label: string, ...controls: HTMLElement[]): HTMLElement => {
     const r = document.createElement('div'); r.className = 'fp-row fp-opt-row';
     const l = document.createElement('span'); l.className = 'appearance-label'; l.textContent = label;
+    for (const control of controls) {
+      const field = control.matches('input, select, button') ? control : control.querySelector('input, select');
+      field?.setAttribute('aria-label', label);
+    }
     r.append(l, ...controls); return r;
   };
   const makeSwitch = (on: boolean, onChange: (v: boolean) => void): HTMLButtonElement => {
@@ -562,14 +584,6 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
     return btn;
   };
 
-  // A control that needs the full row width sits below a small caption instead of
-  // beside a label — three segmented buttons don't fit next to a label in this panel.
-  const optStack = (label: string, control: HTMLElement, hint?: string): HTMLElement => {
-    const r = document.createElement('div'); r.className = 'fp-opt-stack';
-    const l = document.createElement('span'); l.className = 'appearance-label'; l.textContent = label;
-    if (hint) l.title = hint;
-    r.append(l, control); return r;
-  };
   // A right-aligned number field with a unit suffix (px, ×) for the Size rows.
   const numField = (
     value: number | undefined, unit: string, placeholder: string,
@@ -597,7 +611,7 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
     [['scale', 'Scale'], ['dims', 'Dimensions']], dimsMode ? 'dims' : 'scale',
     (v) => {
       if (v === 'dims') {
-        if (!t.width && !t.height) t.width = ctx.ab ? Math.round(ctx.ab.width * (t.scale || 1)) : undefined;
+        if (!t.width && !t.height) t.width = measured ? Math.round(measured.rect.width * (t.scale || 1)) : undefined;
       } else {
         t.width = undefined; t.height = undefined;
         if (!t.scale || t.scale <= 0) t.scale = 1;
@@ -605,75 +619,68 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
       commit(); ctx.syncCollapsed(); rerender();
     },
   );
-  sizeSeg.classList.add('fp-opt-seg-full');
-  container.appendChild(optStack('Size', sizeSeg));
+  sizeSeg.setAttribute('aria-label', 'Size mode');
+  container.appendChild(optRow('Size', sizeSeg));
 
   if (!dimsMode) {
     container.appendChild(optRow('Scale', numField(
       t.scale ?? 1, '×', '1',
-      (v) => { const n = parseFloat(v); if (Number.isFinite(n) && n > 0) { t.scale = Math.min(8, Math.max(0.1, n)); ctx.commit(false); ctx.syncCollapsed(); } },
+      (v) => { const n = parseFloat(v); if (Number.isFinite(n) && n > 0) { t.scale = Math.min(8, Math.max(0.1, n)); commit(false); ctx.syncCollapsed(); } },
       (v, inp) => { let n = parseFloat(v); if (!Number.isFinite(n) || n <= 0) n = 1; t.scale = Math.min(8, Math.max(0.1, n)); inp.value = String(t.scale); commit(); ctx.syncCollapsed(); },
       { min: 0.1, max: 8, step: '0.5' },
     )));
   } else {
-    const aspect = ctx.ab ? (ctx.ab.width / ctx.ab.height || 1) : 1;
+    const aspect = measured ? (measured.rect.width / measured.rect.height || 1) : 1;
     const clampPx = (n: number) => Math.min(8192, Math.max(1, Math.round(n)));
-    // A blank axis is auto-derived from the set one via the frame's aspect; show that
+    // A blank axis is auto-derived from the set one via the export bounds' aspect; show that
     // derived value as the placeholder so "Auto" is never a mystery.
-    const autoW = t.width ?? (t.height ? Math.round(t.height * aspect) : (ctx.ab ? ctx.ab.width : 0));
-    const autoH = t.height ?? (t.width ? Math.round(t.width / aspect) : (ctx.ab ? ctx.ab.height : 0));
+    const autoW = t.width ?? (t.height ? Math.round(t.height * aspect) : (measured?.rect.width ?? 0));
+    const autoH = t.height ?? (t.width ? Math.round(t.width / aspect) : (measured?.rect.height ?? 0));
     container.appendChild(optRow('Width', numField(
       t.width, 'px', String(autoW),
-      (v) => { const n = parseInt(v, 10); if (Number.isFinite(n) && n > 0) { t.width = clampPx(n); ctx.commit(false); ctx.syncCollapsed(); } },
+      (v) => { const n = parseInt(v, 10); if (Number.isFinite(n) && n > 0) { t.width = clampPx(n); commit(false); ctx.syncCollapsed(); } },
       (v, inp) => {
         const n = parseInt(v, 10);
         t.width = (Number.isFinite(n) && n > 0) ? clampPx(n) : undefined;
-        if (!t.width && !t.height) t.width = ctx.ab ? clampPx(ctx.ab.width) : 1; // keep Dimensions mode meaningful
+        if (!t.width && !t.height) t.width = measured ? clampPx(measured.rect.width) : 1; // keep Dimensions mode meaningful
         inp.value = t.width ? String(t.width) : '';
-        commit(); ctx.syncCollapsed(); rerender(); // refresh Height's auto placeholder
+        commit(); ctx.syncCollapsed(); // refresh the auto placeholder without replacing the next click target
       },
     )));
     container.appendChild(optRow('Height', numField(
       t.height, 'px', String(autoH),
-      (v) => { const n = parseInt(v, 10); if (Number.isFinite(n) && n > 0) { t.height = clampPx(n); ctx.commit(false); ctx.syncCollapsed(); } },
+      (v) => { const n = parseInt(v, 10); if (Number.isFinite(n) && n > 0) { t.height = clampPx(n); commit(false); ctx.syncCollapsed(); } },
       (v, inp) => {
         const n = parseInt(v, 10);
         t.height = (Number.isFinite(n) && n > 0) ? clampPx(n) : undefined;
-        if (!t.width && !t.height) t.height = ctx.ab ? clampPx(ctx.ab.height) : 1;
+        if (!t.width && !t.height) t.height = measured ? clampPx(measured.rect.height) : 1;
         inp.value = t.height ? String(t.height) : '';
-        commit(); ctx.syncCollapsed(); rerender();
+        commit(); ctx.syncCollapsed();
       },
     )));
   }
-  // ---- Bounds: the frame, or hug the visible paths inside it ----
-  const boundsSeg = segmented(
-    [['frame', 'Frame'], ['paths', 'Fit to paths']], t.bounds ?? 'frame',
-    (v) => { t.bounds = v === 'paths' ? 'paths' : undefined; commit(); ctx.syncCollapsed(); rerender(); },
-  );
-  boundsSeg.classList.add('fp-opt-seg-full');
-  container.appendChild(optStack('Bounds', boundsSeg,
-    'Fit to paths: the canvas edges touch the outermost visible path (hidden layers ignored). Coordinates are kept; only the viewBox changes.'));
-
-  if (ctx.ab) {
-    // Fit to paths measures the artwork as it is now; the caption says so.
-    const fit = exportRect(state, ctx.ab, t.bounds);
-    const cap = document.createElement('div'); cap.className = 'fp-opt-caption';
-    cap.textContent = `Output ${resolvedPx(t, fit.rect)}${t.bounds === 'paths' && !fit.note ? ' (paths as they are now)' : ''}`;
-    container.appendChild(cap);
-  }
+  const fitSwitch = makeSwitch(t.bounds === 'paths', (on) => {
+    t.bounds = on ? 'paths' : undefined; commit(); ctx.syncCollapsed(); rerender();
+  });
+  fitSwitch.title = 'On: crop to visible path geometry, excluding strokes. Off: use the full frame.';
+  container.appendChild(optRow('Fit to paths', fitSwitch));
+  if (ctx.ab) { refreshOutput(); container.appendChild(output); }
 
   // Divider before the format-specific options.
   const divider = document.createElement('div'); divider.className = 'fp-opt-divider';
   container.appendChild(divider);
 
   if (t.format === 'svg') {
-    const seg = segmented(
-      [['keep', 'Keep'], ['outline', 'Outlines'], ['embed', 'Embed']],
-      t.textMode ?? state.textExportMode,
-      (v) => { t.textMode = v as ExportTarget['textMode']; commit(); },
-    );
-    seg.classList.add('fp-opt-seg-full');
-    container.appendChild(optStack('Text', seg, 'Keep: live <text> (needs the font installed). Outlines: convert to vector paths. Embed: inline the font in the file.'));
+    const text = createSelect([
+      { value: 'keep', label: 'Editable text' },
+      { value: 'outline', label: 'Convert to outlines' },
+      { value: 'embed', label: 'Embed fonts' },
+    ]);
+    text.classList.add('fp-opt-select');
+    text.value = t.textMode ?? state.textExportMode;
+    text.title = 'Editable text needs the font installed. Outlines become vector paths. Embed includes the font in the file.';
+    text.addEventListener('change', () => { t.textMode = text.value as ExportTarget['textMode']; commit(); });
+    container.appendChild(optRow('Text', text));
     container.appendChild(optRow('Bake transforms', makeSwitch(
       t.bake ?? state.bakeTransformsOnExport, (on) => { t.bake = on; commit(); },
     )));
@@ -699,14 +706,11 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
   } else {
     // SVG / PNG / TIFF can be transparent (default) or a solid colour.
     const transparent = (t.background ?? 'transparent') === 'transparent';
-    const holder = document.createElement('span'); holder.className = 'fp-opt-bg';
-    const subl = document.createElement('span'); subl.className = 'fp-opt-sub'; subl.textContent = 'Transparent';
     const sw = makeSwitch(transparent, (on) => {
       t.background = on ? 'transparent' : '#FFFFFF'; commit();
       rerender(); // re-render to add/remove the swatch
     });
-    holder.append(subl, sw);
-    if (!transparent) holder.appendChild(swatch(t.background ?? '#FFFFFF', (v) => { t.background = v; commit(); }));
-    container.appendChild(optRow('Background', holder));
+    container.appendChild(optRow('Transparent background', sw));
+    if (!transparent) container.appendChild(optRow('Background color', swatch(t.background ?? '#FFFFFF', (v) => { t.background = v; commit(); })));
   }
 }

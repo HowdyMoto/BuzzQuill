@@ -2351,17 +2351,6 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
   padding-bottom: 12px;
   border-bottom: 1px solid var(--ai-border);
 }
-.fp-export-head { display: flex; align-items: center; gap: 6px; }
-.fp-export-head .appearance-label { margin-right: auto; }
-.fp-export-add {
-  flex: 0 0 auto; width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  border: none; border-radius: 5px; cursor: pointer;
-  background: var(--ai-btn); color: var(--ai-text-dim);
-  font-size: 16px; line-height: 1;
-}
-.fp-export-add:hover { background: var(--ai-accent); color: #fff; }
-
 #fp-export-list { display: flex; flex-direction: column; gap: 4px; }
 /* Each target sits on the same panel-darker surface as its expanded settings card,
    so a row and its opened panel read as one material. Inputs stay plain text until
@@ -2447,19 +2436,14 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 }
 .fp-target-opts[hidden] { display: none; } /* our display:flex would otherwise defeat [hidden] */
 .fp-opt-row { min-height: 22px; height: auto; margin-bottom: 0; }
-.fp-opt-row .appearance-label,
-.fp-opt-stack .appearance-label { font-size: 11px; color: var(--ai-text-dim); white-space: nowrap; }
-.fp-opt-bg { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.fp-opt-sub { font-size: 11px; color: var(--ai-text-dim); }
+.fp-opt-row .appearance-label { font-size: 11px; color: var(--ai-text-dim); white-space: nowrap; }
 .fp-opt-qty { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .fp-opt-qty .fp-opt-num { width: 52px; text-align: center; }
 .fp-opt-caption { font-size: 10px; color: var(--ai-text-dim); text-align: right; margin-top: -3px; }
 .fp-opt-divider { height: 1px; background: var(--ai-border); margin: 1px 0; }
 .fp-opt-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; width: auto; margin-left: auto; }
-.fp-opt-seg button { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; height: 22px; white-space: nowrap; }
-.fp-opt-stack { display: flex; flex-direction: column; gap: 4px; padding: 0; }
-.fp-opt-seg-full { display: flex; width: 100%; gap: 2px; margin-left: 0; }
-.fp-opt-seg-full button { flex: 1 1 0; padding: 3px 4px; font-size: 11px; height: 23px; white-space: nowrap; }
+.fp-opt-seg.btn-group button { width: auto; flex: 0 0 auto; padding: 2px 5px; font-size: 11px; height: 22px; white-space: nowrap; }
+.fp-opt-select { margin-left: auto; min-width: 0; width: 145px; height: 24px; font-size: 11px; }
 .fp-opt-row .appearance-color-btn { width: 22px; height: 22px; }
 .fp-export-btn {
   margin-top: 8px;
