@@ -1680,9 +1680,9 @@ export class AppState {
   unlockAll(): void { this.layerMgr.unlockAll(); }
   moveShapeUp(id: string): void { this.layerMgr.moveShapeUp(id); }
   moveShapeDown(id: string): void { this.layerMgr.moveShapeDown(id); }
-  moveShape(draggedId: string, targetId: string, position: 'before' | 'after' | 'inside', outdentLevels = 0): boolean { return this.layerMgr.moveShape(draggedId, targetId, position, outdentLevels); }
+  moveShape(draggedId: string | string[], targetId: string, position: 'before' | 'after' | 'inside', outdentLevels = 0): boolean { return this.layerMgr.moveShape(draggedId, targetId, position, outdentLevels); }
   groupShapes(dragged: string | string[], targetId: string): boolean { return this.layerMgr.groupShapes(dragged, targetId); }
-  canDrop(draggedId: string, targetId: string, zone: 'before' | 'after' | 'inside' | 'onto', outdentLevels = 0): boolean { return this.layerMgr.canDrop(draggedId, targetId, zone, outdentLevels); }
+  canDrop(draggedId: string | string[], targetId: string, zone: 'before' | 'after' | 'inside' | 'onto', outdentLevels = 0): boolean { return this.layerMgr.canDrop(draggedId, targetId, zone, outdentLevels); }
   bringToFront(): void { this.layerMgr.bringToFront(); }
   sendToBack(): void { this.layerMgr.sendToBack(); }
   duplicateShape(id: string): void { this.layerMgr.duplicateShape(id); }

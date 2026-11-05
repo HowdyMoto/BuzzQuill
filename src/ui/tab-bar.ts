@@ -166,12 +166,17 @@ function buildTab(t: import('../core/document-manager').DocTab, selected: boolea
     tab.appendChild(badge);
   }
 
+  // Reserve the dot's width even when clean, so save completion cannot shift tabs.
+  const dirtySlot = document.createElement('span');
+  dirtySlot.className = 'doc-tab-dirty-slot';
+  dirtySlot.setAttribute('aria-hidden', 'true');
   if (t.dirty) {
     const dot = document.createElement('span');
     dot.className = 'doc-tab-dirty';
     dot.textContent = '•';
-    tab.appendChild(dot);
+    dirtySlot.appendChild(dot);
   }
+  tab.appendChild(dirtySlot);
   const name = document.createElement('span');
   name.className = 'doc-tab-name';
   name.textContent = t.title;

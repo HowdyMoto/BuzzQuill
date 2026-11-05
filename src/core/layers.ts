@@ -131,20 +131,25 @@ export class LayerManager {
     this.host.onChange();
   }
 
-  /**
-   * Drag-and-drop reorder/reparent from the Layers panel.
-   *
-   * The Layers panel lists shapes top-to-bottom in REVERSE paint order (top of the
-   * list = top of the z-stack = last in the DOM). `position` is in that visual
-   * order: 'before' = above the target in the panel (later in the DOM), 'after' =
-   * below it, 'inside' = into the target group. We mutate the live DOM then rebuild
-   * the model from it. When the parent changes, the transform is recomputed so the
-   * element keeps its on-screen position.
-   */
+  /** Move selected ancestors once; descendants travel within their existing subtree. */
+  private draggedRoots(dragged: string | string[]): ShapeData[] {
+    const shapes = [...new Set(Array.isArray(dragged) ? dragged : [dragged])]
+      .map(id => this.host.findShape(id));
+    if (shapes.some(s => !s)) return [];
+    return (shapes as ShapeData[])
+      .filter(s => !shapes.some(other => other !== s && other!.element.contains(s.element)))
+      .sort((a, b) => a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+  }
+
   /** Whether a Layers-panel drag would be a legal drop — mirrors the guards in
    *  moveShape/groupShapes without mutating, so the panel can show live "can't
    *  drop here" feedback (e.g. a frame into another frame). */
-  canDrop(draggedId: string, targetId: string, zone: 'before' | 'after' | 'inside' | 'onto', outdentLevels = 0): boolean {
+  canDrop(dragged: string | string[], targetId: string, zone: 'before' | 'after' | 'inside' | 'onto', outdentLevels = 0): boolean {
+    const roots = this.draggedRoots(dragged);
+    return roots.length > 0 && roots.every(s => this.canDropOne(s.id, targetId, zone, outdentLevels));
+  }
+
+  private canDropOne(draggedId: string, targetId: string, zone: 'before' | 'after' | 'inside' | 'onto', outdentLevels = 0): boolean {
     if (draggedId === targetId) return false;
     const dragged = this.host.findShape(draggedId);
     const target = this.host.findShape(targetId);
@@ -178,52 +183,42 @@ export class LayerManager {
     return !!anchor.parentNode;
   }
 
-  moveShape(draggedId: string, targetId: string, position: 'before' | 'after' | 'inside', outdentLevels = 0): boolean {
-    if (draggedId === targetId) return false;
-    const dragged = this.host.findShape(draggedId);
-    const target = this.host.findShape(targetId);
-    if (!dragged || !target) return false;
-
-    const dEl = dragged.element;
-    const tEl = target.element;
-    // Never drop a group into its own subtree.
-    if (dEl === tEl || dEl.contains(tEl)) return false;
-
-    if (dragged.type === 'frame' && position === 'inside') return false;
-    // A repeat (or anything carrying one) can't land inside a repeat's cell.
-    const carriesRepeat = dEl.hasAttribute('data-repeat') || !!dEl.querySelector('[data-repeat]');
-
+  /**
+   * Drag-and-drop reorder/reparent from the Layers panel.
+   *
+   * The Layers panel lists shapes top-to-bottom in REVERSE paint order (top of the
+   * list = top of the z-stack = last in the DOM). `position` is in that visual
+   * order: 'before' = above the target in the panel (later in the DOM), 'after' =
+   * below it, 'inside' = into the target group. We mutate the live DOM then rebuild
+   * the model from it. When the parent changes, the transform is recomputed so the
+   * element keeps its on-screen position.
+   */
+  moveShape(dragged: string | string[], targetId: string, position: 'before' | 'after' | 'inside', outdentLevels = 0): boolean {
+    const roots = this.draggedRoots(dragged);
+    // Validate every root before touching the DOM: one illegal item rejects all.
+    if (!roots.length || !roots.every(s => this.canDropOne(s.id, targetId, position, outdentLevels))) return false;
+    const target = this.host.findShape(targetId)!;
+    let parent: Element;
+    let before: Node | null = null;
     if (position === 'inside') {
-      // Repeat wrappers accept children like groups — the drop joins the cell
-      // and every generated instance follows on the next sync.
-      if (target.type !== 'group' && target.type !== 'repeat' && target.type !== 'frame') return false;
-      if (carriesRepeat && (target.type === 'repeat' || tEl.closest('[data-repeat]'))) return false;
-      movePreservingWorld(dEl, tEl); // top of the group's stack
+      parent = target.element;
     } else {
-      // For an 'after' drop, walk up `outdentLevels` container levels to choose how
-      // deep the item lands — this is what lets a drop at the end of a nested run (or
-      // the bottom of the whole list) attach as the group's last child (0 levels) or
-      // pop out to a shallower level, up to the root (tree-view convention).
-      let anchor: Element = tEl;
+      let anchor: Element = target.element;
       if (position === 'after') {
         const layer = this.host.getDrawingLayer() as unknown as Element;
         for (let i = 0; i < outdentLevels && anchor.parentElement && anchor.parentElement !== layer; i++) {
           anchor = anchor.parentElement;
         }
       }
-      // Frames live only at the top level — never nested in a group or another frame.
-      if (dragged.type === 'frame' && anchor.parentNode !== this.host.getDrawingLayer()) return false;
-      const parent = anchor.parentNode;
-      if (!parent) return false;
-      // A before/after drop beside a repeat's cell child also lands in the cell.
-      if (carriesRepeat && parent instanceof Element && parent.closest('[data-repeat]')) return false;
-      // Panel order is reversed vs. the DOM, so 'before' goes after the target.
-      if (!(parent instanceof Element)) return false;
-      movePreservingWorld(dEl, parent, position === 'before' ? anchor.nextSibling : anchor);
+      if (!(anchor.parentNode instanceof Element)) return false;
+      parent = anchor.parentNode;
+      before = position === 'before' ? anchor.nextSibling : anchor;
+      // Pick a stationary insertion point even when selected siblings follow it.
+      while (before && roots.some(s => s.element === before)) before = before.nextSibling;
     }
-
+    for (const shape of roots) movePreservingWorld(shape.element, parent, before);
     this.host.rebuild();
-    this.host.setSelection([draggedId]);
+    this.host.setSelection(roots.map(s => s.id));
     this.host.saveHistory();
     this.host.onChange();
     return true;

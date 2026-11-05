@@ -1320,6 +1320,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
 .doc-tab .doc-tab-badge.cloud { color: var(--ai-accent); }
 .doc-tab .doc-tab-badge.local { color: var(--ai-text-dim); }
 .doc-tab.active .doc-tab-badge.local { color: var(--ai-text); }
+.doc-tab-dirty-slot { flex: 0 0 6px; width: 6px; display: inline-flex; align-items: center; justify-content: center; }
 .doc-tab .doc-tab-dirty { color: var(--ai-accent); font-size: 14px; line-height: 1; }
 .doc-tab .doc-tab-close {
   border: none; background: transparent; color: inherit; cursor: pointer;
@@ -2366,8 +2367,9 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
    so a row and its opened panel read as one material. Inputs stay plain text until
    hover/focus. */
 .fp-target {
-  display: flex; align-items: center; gap: 3px;
-  height: 30px; padding: 0 8px 0 6px; border-radius: 7px;
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 18px;
+  align-items: center; gap: 3px;
+  padding: 5px 8px 5px 6px; border-radius: 7px;
 }
 .fp-target:hover { background: var(--ai-highlight); }
 .fp-target-fmt {
@@ -2388,7 +2390,12 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
   border: 1px solid transparent; border-radius: 4px;
   font-size: 12px;
 }
-.fp-target-name { flex: 1 1 auto; }
+/* Filename gets its own line; metadata no longer squeezes it to a tiny prefix. */
+.fp-target-name { grid-row: 1; grid-column: 2 / 4; width: 100%; text-overflow: ellipsis; }
+.fp-target-gear { grid-row: 1; grid-column: 1; }
+.fp-target-x { grid-row: 1; grid-column: 4; }
+.fp-target-fmt { grid-row: 2; grid-column: 2; justify-self: start; }
+.fp-target-size { grid-row: 2; grid-column: 3; justify-self: end; }
 .fp-target-size { flex: 0 0 60px; width: 60px; text-align: center; color: var(--ai-text-dim); }
 .fp-target-name:hover, .fp-target-size:hover { background: var(--ai-input); }
 .fp-target-name:focus, .fp-target-size:focus {
@@ -2415,8 +2422,7 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 .fp-target-wrap.open .fp-target {
   border-bottom: 1px solid var(--ai-border); border-radius: 7px 7px 0 0;
 }
-/* The header owns the filename in both states. Expanded cards give it the
-   space used by the compact size summary and make editing discoverable. */
+/* The header owns the filename in both states. Expanded cards make editing explicit. */
 .fp-target-wrap.open .fp-target-name {
   background: var(--ai-input); border-color: var(--ai-border-light);
 }
