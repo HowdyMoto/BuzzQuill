@@ -240,12 +240,14 @@ const EXPORT_PRESETS: Record<string, ExportTarget[]> = {
   ],
 };
 
+let committingTargetName = false;
+
 /** Rebuild the target rows only when it's safe — never while a field inside the
  *  list is focused (that would yank the input mid-edit). Undo/redo and selection
  *  changes rebuild normally because nothing in the list is focused then. */
 function syncExportTargets(state: AppState, fid: string): void {
   const list = document.getElementById('fp-export-list');
-  if (list && list.contains(document.activeElement)) return;
+  if (committingTargetName || (list && list.contains(document.activeElement))) return;
   buildExportRows(state, fid);
 }
 
@@ -405,7 +407,11 @@ function buildExportRows(state: AppState, fid: string): void {
     name.addEventListener('input', () => { t.name = name.value; name.title = `${name.value}.${t.format}`; commit(false); });
     name.addEventListener('change', () => {
       t.name = name.value.trim() || (ab?.name ?? 'export');
-      name.value = t.name; name.title = `${t.name}.${t.format}`; commit(true);
+      name.value = t.name; name.title = `${t.name}.${t.format}`;
+      // The field already displays the committed value. Preserve the row while
+      // focus moves to another control, so its pending click is not swallowed.
+      committingTargetName = true;
+      try { commit(true); } finally { committingTargetName = false; }
     });
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
 

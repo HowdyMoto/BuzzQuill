@@ -8,12 +8,12 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const id = await page.evaluate(async () => {
       const w = window as any;
       w.state.pasteSvgMarkup('<svg xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80"/></svg>');
-      w.docs.renameTab(w.docs.activeId, 'Brand exploration.svg');
+      w.docs.renameTab(w.docs.activeId, 'Brand.svg');
       const id = w.docs.activeId;
       w.docs.newTab();
       w.docs.moveTabToGroup(id, 1, null, true);
       Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: async () => ({
-        name: 'Brand exploration.svg', kind: 'file',
+        name: 'Brand.svg', kind: 'file',
         createWritable: async () => ({ write: async () => new Promise<void>(r => { w.releaseSave = r; }), close: async () => {} }),
       }) });
       const { saveProjectAs } = await import('/src/ui/project-file.ts');
@@ -24,14 +24,23 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const tab = page.locator(`.doc-tab[data-tab-id="${id}"]`);
     await expect(tab).toHaveClass(/save-pending/);
     await expect(tab.locator('.doc-tab-dirty')).toHaveCount(1);
+    const layout = () => tab.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      const name = el.querySelector('.doc-tab-name')!.getBoundingClientRect();
+      const close = el.querySelector('.doc-tab-close')!.getBoundingClientRect();
+      return { width: box.width, nameX: name.x, nameWidth: name.width, closeX: close.x };
+    });
+    const whileSaving = await layout();
     await page.screenshot({ path: testInfo.outputPath('saving.png') });
     await page.evaluate(async () => { (window as any).releaseSave(); await (window as any).pendingSave; });
     await expect(tab).toHaveClass(/save-complete/);
     await expect(tab.locator('.doc-tab-dirty')).toHaveCount(0);
+    expect(await layout()).toEqual(whileSaving);
     const animation = await tab.locator('.doc-tab-badge').evaluate(el => getComputedStyle(el).animationName);
     expect(animation).toBe(reducedMotion === 'reduce' ? 'none' : 'tab-save-celebrate');
     await page.screenshot({ path: testInfo.outputPath('saved.png') });
     await expect(tab).not.toHaveClass(/save-complete/);
+    expect(await layout()).toEqual(whileSaving);
     await expect(tab.locator('.doc-tab-badge')).toHaveCount(1);
   });
 }
