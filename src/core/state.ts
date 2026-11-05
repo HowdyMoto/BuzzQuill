@@ -152,6 +152,8 @@ export class AppState {
   /** Regenerate the wrapper's rendered output after a geometry change (null for a
    *  plain path). Runs on every live edit + commit so strokes/width follow the nodes. */
   private editingRegen: (() => void) | null = null;
+  /** Identity, not just id: replacement markup can reuse an id with new geometry. */
+  private editingOwnerEl: SVGElement | null = null;
 
   /** Smart guides: snap drag/resize to the artboard and other objects. Toggled
    *  from View → Smart Guides; held ⌘/Ctrl bypasses it per-gesture. */
@@ -1235,6 +1237,16 @@ export class AppState {
 
   private notify(): void {
     if (this.notifyDepth > 0) { this.notifyPending = true; return; }
+    // A point-edit session belongs to exactly one selected, live geometry source.
+    // Selection writers include managers, imports, paste and document/history
+    // restores; reconcile here so no entry path can leave stale node chrome/tools.
+    if (this.editingPathId && (this.selectedShapeIds.length !== 1 ||
+        this.selectedShapeIds[0] !== this.editingPathId ||
+        !this.editingOwnerEl?.isConnected ||
+        this.findShapeById(this.editingPathId)?.element !== this.editingOwnerEl ||
+        (this.editingSourceEl && !this.editingSourceEl.isConnected))) {
+      this.exitPathEdit(false);
+    }
     this.onChangeCallback();
   }
 
@@ -1248,7 +1260,7 @@ export class AppState {
       this.notifyDepth--;
       if (this.notifyDepth === 0 && this.notifyPending) {
         this.notifyPending = false;
-        this.onChangeCallback();
+        this.notify();
       }
     }
   }
@@ -1473,7 +1485,6 @@ export class AppState {
 
   selectShape(id: string | null): void {
     this.selectedShapeIds = id ? [id] : [];
-    if (this.editingPathId && id !== this.editingPathId) this.exitPathEdit(false);
     this.notify();
   }
 
@@ -1533,6 +1544,7 @@ export class AppState {
       const src = shape.element.querySelector(`:scope > ${srcSel}`) as SVGElement | null;
       const wd = src?.getAttribute('d');
       if (!src || !wd) return false; // only path-source wrappers are node-editable
+      this.editingOwnerEl = shape.element;
       this.editingSourceEl = src;
       this.editingRegen = shape.type === 'width'
         ? () => this.widthMgr.refresh(shape.element)
@@ -1558,6 +1570,7 @@ export class AppState {
     }
     const d = shape.element.getAttribute('d');
     if (!d) return false;
+    this.editingOwnerEl = shape.element;
     this.editingSourceEl = null;
     this.editingRegen = null;
     this.editingPathId = id;
@@ -1632,6 +1645,7 @@ export class AppState {
     }
     this.editingPathId = null;
     this.pathEdit = null;
+    this.editingOwnerEl = null;
     this.editingSourceEl = null;
     this.editingRegen = null;
     // Leaving node editing (incl. Escape mid-drag) ends any interactive gesture,
@@ -1833,7 +1847,10 @@ export class AppState {
     if (this.editingPathId) {
       const shape = this.findShapeById(this.editingPathId);
       const d = shape?.element.getAttribute('d');
-      if (shape && shape.type === 'path' && d) this.pathEdit = new PathEditSession(d);
+      if (shape && shape.type === 'path' && d) {
+        this.editingOwnerEl = shape.element;
+        this.pathEdit = new PathEditSession(d);
+      }
       else this.exitPathEdit(false);
     }
     // Artboards now derive from the frame shapes in the restored markup

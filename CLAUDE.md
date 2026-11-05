@@ -33,6 +33,10 @@ Several `core/` modules are used directly by AppState or the tools but are **hel
 
 What legitimately **stays** in AppState: the shape model + `rebuildShapesFromDOM`, history capture/restore, the frames model + grid/rulers, selection, defs import/export, group isolation, clipping, the node-edit session. That's the irreducible core, not a grab-bag.
 
+## Selection and point-edit lifecycle
+
+A point-edit session belongs to exactly one selected live shape/source. `AppState.notify()` reconciles that invariant before rendering, including the final notification from `runBatched`. Managers and insertion/import routes must publish their final selection through a change notification; do not add isolated tool-switch workarounds to each importer. While Direct Selection has no point-edit session, it delegates object drag/resize/rotate/nudge to `SelectTool`, so visible transform handles remain functional after selection changes or new content. Preserve an explicit A tool choice; double-click edits still return to Select on exit. Guarded by `test/content-selection-lifecycle.spec.ts` and `test/point-edit-returns-to-select.spec.ts`, both in CI.
+
 ## Coordinates
 
 - **Screen → world:** `Canvas.screenToSVG()` (`core/canvas.ts`) — the single entry point; every tool feeds pointer coords through it. It's manual viewBox math, not CTM-based.

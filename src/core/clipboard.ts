@@ -371,6 +371,7 @@ export class ClipboardManager {
     }
     if (newIds.length === 0) return false;
     this.host.setSelection(newIds);
+    this.host.onChange(); // publish the final multi-selection after addShape notifications
     return true;
   }
 }
