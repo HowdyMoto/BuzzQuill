@@ -398,11 +398,16 @@ function buildExportRows(state: AppState, fid: string): void {
     name.className = 'fp-target-name';
     name.type = 'text';
     name.value = t.name;
-    name.placeholder = 'filename';
+    name.placeholder = 'File name';
+    name.setAttribute('aria-label', 'Export file name');
     name.spellcheck = false;
     name.title = `${t.name}.${t.format}`;
     name.addEventListener('input', () => { t.name = name.value; name.title = `${name.value}.${t.format}`; commit(false); });
-    name.addEventListener('change', () => { t.name = name.value.trim() || (ab?.name ?? 'export'); commit(true); });
+    name.addEventListener('change', () => {
+      t.name = name.value.trim() || (ab?.name ?? 'export');
+      name.value = t.name; name.title = `${t.name}.${t.format}`; commit(true);
+    });
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
 
     // Per-format options — a card revealed by the caret; content adapts to the
     // format. Built lazily by renderOpts (declared below, once name+size exist).
@@ -444,8 +449,7 @@ function buildExportRows(state: AppState, fid: string): void {
     size.addEventListener('change', () => { applySize(true); size.value = formatSize(t); }); // normalise on blur
     size.addEventListener('keydown', (e) => { if (e.key === 'Enter') size.blur(); });
 
-    // The expanded card restates name + size as labelled rows; keep the two surfaces
-    // in sync so an edit in either place is reflected in the other.
+    // Keep the compact size summary in sync with the expanded size controls.
     const syncCollapsed = () => {
       name.value = t.name; name.title = `${t.name}.${t.format}`;
       size.value = formatSize(t); size.title = `Size — type 2×, 512, or 512×512  ·  → ${resolvedPx(t, ab)}`;
@@ -457,6 +461,7 @@ function buildExportRows(state: AppState, fid: string): void {
     gear.className = 'fp-target-gear';
     gear.title = 'Options';
     gear.setAttribute('aria-label', 'Export options');
+    gear.setAttribute('aria-expanded', String(!opts.hidden));
     gear.innerHTML = '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     gear.classList.toggle('open', !opts.hidden);
     if (!opts.hidden) renderOpts(); // rebuilt while open — repopulate the card
@@ -464,6 +469,7 @@ function buildExportRows(state: AppState, fid: string): void {
       opts.hidden = !opts.hidden;
       if (opts.hidden) expandedTargets.delete(i); else expandedTargets.add(i);
       gear.classList.toggle('open', !opts.hidden);
+      gear.setAttribute('aria-expanded', String(!opts.hidden));
       wrap.classList.toggle('open', !opts.hidden);
       if (!opts.hidden) renderOpts();
     });
@@ -505,8 +511,8 @@ interface TargetOptCtx {
 }
 
 /** Render a target's expanded settings card into `container` (cleared first). The
- *  card restates the identity fields as clearly-labelled rows — File name, then Size
- *  (Scale, or an explicit Width × Height with the two axes on their own rows) — and
+ *  filename stays editable in the header; settings begin with Size (Scale, or an
+ *  explicit Width × Height with the two axes on their own rows) and
  *  an Output caption showing the exact pixels produced, followed by the format's own
  *  options (SVG text handling + bake + background; PNG background; JPG matte +
  *  quality). Each value falls back to the document default, shown as the active
@@ -578,19 +584,6 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
     const holder = document.createElement('span'); holder.className = 'fp-opt-qty'; holder.append(inp, u);
     return holder;
   };
-
-  // ---- Identity: File name (with a live extension suffix) ----
-  {
-    const inp = document.createElement('input');
-    inp.type = 'text'; inp.className = 'fp-opt-name'; inp.spellcheck = false;
-    inp.value = t.name; inp.placeholder = 'filename';
-    inp.addEventListener('input', () => { t.name = inp.value; ctx.commit(false); ctx.syncCollapsed(); });
-    inp.addEventListener('change', () => { t.name = inp.value.trim() || (ctx.ab?.name ?? 'export'); inp.value = t.name; ctx.commit(true); ctx.syncCollapsed(); });
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
-    const ext = document.createElement('span'); ext.className = 'appearance-unit fp-opt-ext'; ext.textContent = '.' + t.format;
-    const holder = document.createElement('span'); holder.className = 'fp-opt-name-holder'; holder.append(inp, ext);
-    container.appendChild(optRow('File name', holder));
-  }
 
   // ---- Size: Scale (a multiplier) or explicit Dimensions (Width × Height) ----
   const dimsMode = !!(t.width || t.height);

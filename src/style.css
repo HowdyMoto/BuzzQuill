@@ -2415,6 +2415,14 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 .fp-target-wrap.open .fp-target {
   border-bottom: 1px solid var(--ai-border); border-radius: 7px 7px 0 0;
 }
+/* The header owns the filename in both states. Expanded cards give it the
+   space used by the compact size summary and make editing discoverable. */
+.fp-target-wrap.open .fp-target-name {
+  background: var(--ai-input); border-color: var(--ai-border-light);
+}
+.fp-target-wrap.open .fp-target-name:focus { border-color: var(--ai-accent); }
+.fp-target-wrap.open .fp-target-size { display: none; }
+.fp-target:focus-within .fp-target-x { opacity: 1; }
 .fp-target-wrap.open .fp-target:hover { background: transparent; } /* it's the card header now */
 .fp-target-gear {
   flex: 0 0 auto; width: 16px; height: 18px;
@@ -2439,15 +2447,6 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 .fp-opt-sub { font-size: 11px; color: var(--ai-text-dim); }
 .fp-opt-qty { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .fp-opt-qty .fp-opt-num { width: 52px; text-align: center; }
-/* File name: a real editable field that fills the row, with a dim ".ext" suffix. */
-.fp-opt-name-holder { display: flex; align-items: center; gap: 5px; margin-left: 12px; flex: 1 1 auto; min-width: 0; }
-.fp-opt-name {
-  flex: 1 1 auto; min-width: 0; height: 20px; padding: 0 6px;
-  background: var(--ai-input); color: var(--ai-text);
-  border: 1px solid var(--ai-border-light); border-radius: 4px; font-size: 12px;
-}
-.fp-opt-name:focus { outline: none; border-color: var(--ai-accent); }
-.fp-opt-ext { flex: 0 0 auto; }
 .fp-opt-caption { font-size: 10px; color: var(--ai-text-dim); text-align: right; margin-top: -3px; }
 .fp-opt-divider { height: 1px; background: var(--ai-border); margin: 1px 0; }
 .fp-opt-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; width: auto; margin-left: auto; }
