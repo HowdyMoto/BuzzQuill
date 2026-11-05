@@ -25,17 +25,25 @@ async function boot(page: Page, entry: 'A' | 'double-click' | 'empty-A' = 'A') {
 }
 
 async function appendFromPicker(page: Page) {
+  const previous = await selectedId(page);
   await page.locator('.menu-trigger', { hasText: 'File' }).click();
   const picker = page.waitForEvent('filechooser');
   await page.getByRole('menuitem', { name: 'Append…', exact: true }).click();
   await (await picker).setFiles({ name: 'added.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
+  // setFiles dispatches the change event; it does not await the async SVG import.
+  // With empty-A, null already differs from the old path and is not readiness.
+  await expect.poll(async () => {
+    const id = await selectedId(page);
+    return !!id && id !== previous;
+  }).toBe(true);
 }
 
 async function selectedId(page: Page) {
-  return page.evaluate(() => (window as any).state.selectedShapeId as string);
+  return page.evaluate(() => (window as any).state.selectedShapeId as string | null);
 }
 
 async function transformImmediately(page: Page) {
+  await expect.poll(() => selectedId(page)).toBeTruthy();
   await expect.poll(() => page.evaluate(() => (window as any).state.editingPathId)).toBeNull();
   await expect(page.locator('[data-node-anchor]')).toHaveCount(0);
   const id = await selectedId(page);
