@@ -348,7 +348,7 @@ export function reversePathData(d: string): string {
 /**
  * Force an anchor to a given type, adjusting its handles:
  * - corner: remove both handles
- * - smooth: ensure mirrored (equal-length, collinear) handles
+ * - smooth: align handles while preserving their individual lengths
  * - broken: keep handles independent (synthesize gently if missing)
  */
 export function setAnchorType(sp: SubPath, i: number, type: AnchorType): void {
@@ -377,13 +377,12 @@ export function setAnchorType(sp: SubPath, i: number, type: AnchorType): void {
   const outLen = a.outX !== undefined ? Math.hypot(a.outX - a.x, a.outY! - a.y) : (next ? Math.hypot(next.x - a.x, next.y - a.y) / 3 : len / 3);
 
   if (type === 'smooth') {
-    const h = Math.max((inLen + outLen) / 2, 1);
-    a.inX = a.x - ux * h; a.inY = a.y - uy * h;
-    a.outX = a.x + ux * h; a.outY = a.y + uy * h;
+    if (prev) { a.inX = a.x - ux * inLen; a.inY = a.y - uy * inLen; }
+    if (next) { a.outX = a.x + ux * outLen; a.outY = a.y + uy * outLen; }
     a.type = 'smooth';
   } else { // broken
-    if (a.inX === undefined && (prev || a.outX !== undefined)) { a.inX = a.x - ux * inLen; a.inY = a.y - uy * inLen; }
-    if (a.outX === undefined && (next || a.inX !== undefined)) { a.outX = a.x + ux * outLen; a.outY = a.y + uy * outLen; }
+    if (a.inX === undefined && prev) { a.inX = a.x - ux * inLen; a.inY = a.y - uy * inLen; }
+    if (a.outX === undefined && next) { a.outX = a.x + ux * outLen; a.outY = a.y + uy * outLen; }
     a.type = 'broken';
   }
 }
