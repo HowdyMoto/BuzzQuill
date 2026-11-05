@@ -1,11 +1,12 @@
 import { createMarqueeRect } from '../ui/overlay-chrome';
 import { BaseTool } from './base';
+import { SelectTool } from './select';
 import type { Point } from '../core/types';
 import { worldToLocal, pointMapperBetween } from '../core/coords';
 import type { AnchorRef, HandleHit } from '../core/path-edit';
 
 /**
- * Direct Selection tool (Illustrator's white arrow). Clicking a path enters a
+ * Direct Selection tool (Illustrator's white arrow). Double-clicking a path enters a
  * node-editing session; anchors and handles can then be selected, moved, and
  * deleted. Handle drags respect the anchor's type (smooth mirrors, broken/Alt
  * is independent). Alt-dragging a CORNER anchor pulls symmetric tangent handles
@@ -14,6 +15,11 @@ import type { AnchorRef, HandleHit } from '../core/path-edit';
  */
 export class NodeEditTool extends BaseTool {
   name = 'directSelect';
+
+  // With no live point edit, the visible object handles must remain functional.
+  // Reuse the same transform implementation as V, including groups and images.
+  private readonly objectTool = new SelectTool(this.state, this.canvas, this.svgCanvas);
+  private objectGesture = false;
 
   private dragAnchor: AnchorRef | null = null;
   private dragHandle: HandleHit | null = null;
@@ -41,7 +47,7 @@ export class NodeEditTool extends BaseTool {
 
   activate(): void {
     // If an editable shape is already selected, jump straight into editing it.
-    // enterPathEdit converts a primitive (rect/ellipse/polygon/star/line) to a
+    // enterPathEdit converts a point-based primitive (polygon/polyline/line) to a
     // path; it no-ops (returns false) for shapes that can't be node-edited.
     const sel = this.state.getSelectedShape();
     if (sel) this.state.enterPathEdit(sel.id);
@@ -52,6 +58,8 @@ export class NodeEditTool extends BaseTool {
     // ending the session below must not ask for a switch of its own (exitPathEdit
     // honours the marker). Harmless during the intended return (already null).
     this.state.nodeEditReturnTool = null;
+    this.objectTool.deactivate();
+    this.objectGesture = false;
     if (this.dirty) this.state.commitPathEdit();
     this.resetDrag();
     this.state.exitPathEdit();
@@ -65,14 +73,10 @@ export class NodeEditTool extends BaseTool {
     const session = this.state.pathEdit;
     const editingEl = this.editingElement();
 
-    // ---- Not editing yet: a single click just SELECTS (Figma-style). Selection is
-    // frame-transparent — clicking a shape inside a frame selects the SHAPE, not the
-    // frame. (The old code entered node-editing immediately AND resolved to the
-    // outermost shape ancestor, i.e. the frame, so nothing inside a frame could be
-    // picked.) Double-click (onDoubleClick) is what reveals the control points.
     if (!session || !editingEl) {
-      const el = this.pickSelect(this.unlockedTarget(e.target as SVGElement, e));
-      this.state.selectShape(el?.id ?? null);
+      this.resetDrag();
+      this.objectGesture = true;
+      this.objectTool.onMouseDown(pt, e);
       return;
     }
 
@@ -143,6 +147,7 @@ export class NodeEditTool extends BaseTool {
   }
 
   onMouseMove(pt: Point, e: MouseEvent): void {
+    if (this.objectGesture) { this.objectTool.onMouseMove(pt, e); return; }
     const session = this.state.pathEdit;
     if (!session) return;
 
@@ -188,6 +193,11 @@ export class NodeEditTool extends BaseTool {
   }
 
   onMouseUp(pt: Point, _e: MouseEvent): void {
+    if (this.objectGesture) {
+      this.objectGesture = false;
+      this.objectTool.onMouseUp(pt, _e);
+      return;
+    }
     if (this.marquee) {
       const moved = this.marqueeMoved;
       this.removeMarqueeRect();
@@ -213,7 +223,7 @@ export class NodeEditTool extends BaseTool {
 
   onKeyDown(e: KeyboardEvent): void {
     const session = this.state.pathEdit;
-    if (!session) return;
+    if (!session) { this.objectTool.onKeyDown(e); return; }
     if (e.key === 'Escape') { this.state.exitPathEdit(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (session.selected.size > 0 && session.deleteSelected()) {
