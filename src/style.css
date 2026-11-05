@@ -4360,6 +4360,9 @@ input.fx-scrubbing {
 
 @media (prefers-reduced-motion: reduce) {
   [data-node-direction-stroke] { opacity: 0 !important; }
+  /* A tiny duration still waits for an animation frame and its backwards fill
+     can hide the controls meanwhile. Reduced motion needs no entrance at all. */
+  .ctx-popover.ctx-enter, .ctx-popover.ctx-enter > * { animation: none !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */
@@ -4652,3 +4655,14 @@ input, select, textarea {
   .save-complete .doc-tab-save-fill { animation: none; transform: scaleX(1); }
   .save-complete .doc-tab-badge, .save-complete .doc-tab-badge::after { animation: none; }
 }
+
+/* Point modes are choices, not the slashed “no paint” appearance toggle. */
+.point-mode-buttons { display: flex; flex: 1; gap: 2px; }
+.point-mode { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
+  border-radius: 3px; background: var(--ai-btn); color: var(--ai-text-dim); font-size: 11px; cursor: pointer; }
+.point-mode:hover { background: var(--ai-highlight); color: var(--ai-text-bright); }
+.point-mode.active { background: var(--ai-accent); color: #fff; }
+.point-mode:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 2px; }
+
+#prop-node-row { flex-wrap: wrap; gap: 6px; }
+.point-mode-hint { flex-basis: 100%; color: var(--ai-text-dim); font-size: 10px; line-height: 1.4; }

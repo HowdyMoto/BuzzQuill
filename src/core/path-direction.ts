@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR, restorePointModes, writePointModes } from './path-point-modes';
 // ---------------------------------------------------------------------------
 // Path direction — which way a path runs, and turning it around.
 //
@@ -25,7 +26,7 @@
 import type { AppearanceLayer, ShapeData } from './types';
 import type { PathEditSession } from './path-edit';
 import { isLockedEl } from './locks';
-import { parsePath, reversePathData } from './path-model';
+import { parsePath, reverseSubPath, serializePath } from './path-model';
 import { dropParametricAttrs, shapeToPathData } from './shape-adapters';
 
 export interface PathDirectionHost {
@@ -208,10 +209,14 @@ export class PathDirectionManager {
       return true;
     }
     const d = el.getAttribute('d') ?? '';
-    const out = reversePathData(d);
+    const model = parsePath(d, 1e-6); // reversal must preserve tiny, distinct points
+    restorePointModes(model, el.getAttribute(POINT_MODES_ATTR));
+    model.subpaths = model.subpaths.map(reverseSubPath);
+    const out = serializePath(model);
     if (!out || out === d) return false;
     for (const tp of textPathsOn(el.id)) flipTextSpan(tp, el as unknown as SVGGeometryElement);
     el.setAttribute('d', out);
+    writePointModes(el, model);
     return true;
   }
 

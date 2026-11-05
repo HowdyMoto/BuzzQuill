@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR } from './path-point-modes';
 // ---------------------------------------------------------------------------
 // Corner rounding & smoothing — the two ways to take the angles out of a path,
 // both as ONE-SHOT geometry rewrites: no parameters are stored and no cache is
@@ -338,6 +339,7 @@ export class CornerManager {
       if (!out || out === d) continue;
       if (s.type !== 'path' && !this.host.convertShapeToPath(s)) continue;
       s.element.setAttribute('d', out);
+      s.element.removeAttribute(POINT_MODES_ATTR);
       dropParametricAttrs(s.element);
       changed = true;
     }
@@ -404,6 +406,7 @@ export class CornerManager {
       if (!shape) continue;
       if (shape.element.getAttribute('d') === e.base) { unchanged.push(e); continue; }
       dropParametricAttrs(shape.element);
+      shape.element.removeAttribute(POINT_MODES_ATTR);
       kept = true;
     }
     if (unchanged.length) { this.restore(unchanged); this.host.rebuild(); }

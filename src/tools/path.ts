@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR, writePointModes } from '../core/path-point-modes';
 import { tokens } from '../ui/tokens';
 import { BaseTool } from './base';
 import type { Point } from '../core/types';
@@ -271,7 +272,7 @@ export class PathTool extends BaseTool {
     const d = sel.element.getAttribute('d');
     if (!d) return false;
 
-    const session = new PathEditSession(d);
+    const session = new PathEditSession(d, sel.element.getAttribute(POINT_MODES_ATTR));
     const local = this.toLocal(pt, sel.element);
     const tol = this.tolerance();
 
@@ -299,6 +300,7 @@ export class PathTool extends BaseTool {
       return;
     }
     el.setAttribute('d', session.commit());
+    writePointModes(el, session.model);
     this.state.saveHistory();
     this.state.onChange_public();
   }

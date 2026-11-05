@@ -687,11 +687,12 @@
             <!-- Node point type (shown while node-editing a path) -->
             <div class="appearance-row" id="prop-node-row" style="display:none">
               <span class="appearance-label" title="Anchor point type">Point</span>
-              <div class="seg-btns">
-                <button class="appearance-toggle" id="prop-node-corner" title="Corner point (no handles)">Corner</button>
-                <button class="appearance-toggle" id="prop-node-smooth" title="Smooth point (connected handles)">Smooth</button>
-                <button class="appearance-toggle" id="prop-node-broken" title="Broken point (separated handles)">Broken</button>
+              <div class="seg-btns point-mode-buttons" role="group" aria-label="Point mode">
+                <button class="point-mode" aria-pressed="false" id="prop-node-corner" title="Corner: remove this point’s curve handles">Corner</button>
+                <button class="point-mode" aria-pressed="false" id="prop-node-smooth" title="Smooth: keep handles aligned; lengths stay independent">Smooth</button>
+                <button class="point-mode" aria-pressed="false" id="prop-node-broken" title="Broken: move each handle independently">Broken</button>
               </div>
+              <span id="prop-node-hint" class="point-mode-hint"></span>
             </div>
 
           </div>

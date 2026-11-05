@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR, writePointModes } from './path-point-modes';
 import type { ToolName, ShapeData, HistoryEntry, ShapeStyle, Artboard, SymbolDef, GradientDef, GradientStop, PatternDef, ObjectShadow, AppearanceLayer, FrameGrid, Point, ExportTarget } from './types';
 import { sanitizeSvgMarkup } from './svg-sanitize';
 import { PathEditSession } from './path-edit';
@@ -1550,7 +1551,7 @@ export class AppState {
         ? () => this.widthMgr.refresh(shape.element)
         : () => this.appearanceMgr.refresh(shape.element);
       this.editingPathId = id;
-      this.pathEdit = new PathEditSession(wd);
+      this.pathEdit = new PathEditSession(wd, src.getAttribute(POINT_MODES_ATTR));
       this.selectedShapeIds = [id];
       this.notify();
       return true;
@@ -1574,7 +1575,7 @@ export class AppState {
     this.editingSourceEl = null;
     this.editingRegen = null;
     this.editingPathId = id;
-    this.pathEdit = new PathEditSession(d);
+    this.pathEdit = new PathEditSession(d, shape.element.getAttribute(POINT_MODES_ATTR));
     this.selectedShapeIds = [id];
     // The in-place conversion changed the document, so make it an undoable step.
     if (converted) this.saveHistory();
@@ -1609,7 +1610,10 @@ export class AppState {
    *  path). Used by the node tool's live preview and by commit. */
   applyEditGeometry(d: string): void {
     const el = this.editingGeometryEl();
-    if (el) el.setAttribute('d', d);
+    if (el) {
+      el.setAttribute('d', d);
+      if (this.pathEdit) writePointModes(el, this.pathEdit.model);
+    }
     this.editingRegen?.();
   }
 
@@ -1849,7 +1853,7 @@ export class AppState {
       const d = shape?.element.getAttribute('d');
       if (shape && shape.type === 'path' && d) {
         this.editingOwnerEl = shape.element;
-        this.pathEdit = new PathEditSession(d);
+        this.pathEdit = new PathEditSession(d, shape.element.getAttribute(POINT_MODES_ATTR));
       }
       else this.exitPathEdit(false);
     }

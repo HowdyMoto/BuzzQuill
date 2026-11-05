@@ -37,6 +37,8 @@ What legitimately **stays** in AppState: the shape model + `rebuildShapesFromDOM
 
 A point-edit session belongs to exactly one selected live shape/source. `AppState.notify()` reconciles that invariant before rendering, including the final notification from `runBatched`. Managers and insertion/import routes must publish their final selection through a change notification; do not add isolated tool-switch workarounds to each importer. While Direct Selection has no point-edit session, it delegates object drag/resize/rotate/nudge to `SelectTool`, so visible transform handles remain functional after selection changes or new content. Preserve an explicit A tool choice; double-click edits still return to Select on exit. Guarded by `test/content-selection-lifecycle.spec.ts` and `test/point-edit-returns-to-select.spec.ts`, both in CI.
 
+Point modes are editing intent, not just curve geometry: aligned Broken handles must stay independent. `core/path-point-modes.ts` stores validated `data-point-modes` on the geometry source (including wrapper sources). Coordinate transforms retain indices; topology edits must rewrite the modes alongside the path, and operations that generate replacement geometry must discard obsolete modes. `PathEditSession` restores them, and live node edits publish them with `d`, so history and saved SVGs preserve the user's choice. Smooth links handle directions while preserving individual lengths; Broken never auto-promotes to Smooth. The point-mode buttons use their own selected style, not the slashed no-paint toggle.
+
 ## Coordinates
 
 - **Screen → world:** `Canvas.screenToSVG()` (`core/canvas.ts`) — the single entry point; every tool feeds pointer coords through it. It's manual viewBox math, not CTM-based.

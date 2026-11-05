@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR } from './path-point-modes';
 // ---------------------------------------------------------------------------
 // Variable-width strokes (the Width tool) — a stroke whose thickness varies along
 // its length.
@@ -111,6 +112,8 @@ export class WidthStrokeManager {
     const srcPath = document.createElementNS(SVG, 'path');
     srcPath.setAttribute('data-width-src', '');
     srcPath.setAttribute('d', centerline);
+    const modes = el.getAttribute(POINT_MODES_ATTR);
+    if (modes) srcPath.setAttribute(POINT_MODES_ATTR, modes);
     srcPath.setAttribute('fill', effectivePaint(el, 'fill') || 'none');
     const fo = el.getAttribute('fill-opacity'); if (fo) srcPath.setAttribute('fill-opacity', fo);
     srcPath.setAttribute('stroke', 'none');
@@ -131,6 +134,8 @@ export class WidthStrokeManager {
     path.id = id;
     path.setAttribute('d', model.centerline);
     const src = g.querySelector(':scope > [data-width-src]') as SVGElement | null;
+    const modes = src?.getAttribute(POINT_MODES_ATTR);
+    if (modes) path.setAttribute(POINT_MODES_ATTR, modes);
     path.setAttribute('fill', src?.getAttribute('fill') || 'none');
     const fo = src?.getAttribute('fill-opacity'); if (fo) path.setAttribute('fill-opacity', fo);
     path.setAttribute('stroke', model.stroke);
