@@ -4360,6 +4360,9 @@ input.fx-scrubbing {
 
 @media (prefers-reduced-motion: reduce) {
   [data-node-direction-stroke] { opacity: 0 !important; }
+  /* A tiny duration still waits for an animation frame and its backwards fill
+     can hide the controls meanwhile. Reduced motion needs no entrance at all. */
+  .ctx-popover.ctx-enter, .ctx-popover.ctx-enter > * { animation: none !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */
