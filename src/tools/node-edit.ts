@@ -1,7 +1,7 @@
 import { createMarqueeRect } from '../ui/overlay-chrome';
 import { BaseTool } from './base';
 import type { Point } from '../core/types';
-import { worldToLocal } from '../core/coords';
+import { worldToLocal, pointMapperBetween } from '../core/coords';
 import type { AnchorRef, HandleHit } from '../core/path-edit';
 
 /**
@@ -36,6 +36,7 @@ export class NodeEditTool extends BaseTool {
   private marqueeMoved = false;
   private marqueeAdditive = false;
   private marqueeFromEmpty = false;
+  private marqueeClickTarget: string | null = null;
   private marqueeRect: SVGRectElement | null = null;
 
   activate(): void {
@@ -117,7 +118,7 @@ export class NodeEditTool extends BaseTool {
       return;
     }
 
-    // 3) Clicked a DIFFERENT shape while editing: leave vector-edit and select it
+    // 3) A plain click on a DIFFERENT shape leaves vector-edit and selects it
     // (single click selects; a double-click would enter ITS control points).
     // Not when the press is within reach of the editing path's own outline, though:
     // that's a press ON it, whatever is topmost under the pointer. Otherwise the
@@ -127,11 +128,9 @@ export class NodeEditTool extends BaseTool {
     // Same tolerance onDoubleClick inserts with, so the two always agree.
     const onOwnOutline = session.hitSegment(local.x, local.y, tol * 1.6) !== null;
     const other = onOwnOutline ? null : this.pickSelect(this.unlockedTarget(e.target as SVGElement, e));
-    if (other && other.id !== this.state.editingPathId) {
-      this.state.exitPathEdit(); // hops back to Select if that's where the edit began
-      this.state.selectShape(other.id);
-      return;
-    }
+    // Defer switching objects until mouseup: a press over background artwork or
+    // a frame can still become a marquee selecting this path's points.
+    this.marqueeClickTarget = other && other.id !== this.state.editingPathId ? other.id : null;
 
     // 4) On the editing path's body or empty space: begin a rubber-band select.
     // A drag selects the enclosed nodes; a plain click (no drag) clears the
@@ -297,6 +296,7 @@ export class NodeEditTool extends BaseTool {
     this.dirty = false;
     this.marquee = false;
     this.marqueeMoved = false;
+    this.marqueeClickTarget = null;
     this.removeMarqueeRect();
   }
 
@@ -306,7 +306,12 @@ export class NodeEditTool extends BaseTool {
   private handleMarqueeClick(): void {
     const session = this.state.pathEdit;
     if (!session) return;
-    if (this.marqueeFromEmpty) {
+    if (this.marqueeClickTarget) {
+      const target = this.marqueeClickTarget;
+      this.marqueeClickTarget = null;
+      this.state.exitPathEdit();
+      this.state.selectShape(target);
+    } else if (this.marqueeFromEmpty) {
       this.state.exitPathEdit();
       this.state.selectShape(null);
     } else {
@@ -319,14 +324,19 @@ export class NodeEditTool extends BaseTool {
   private selectNodesInRect(end: Point): void {
     const session = this.state.pathEdit;
     if (!session) return;
-    const a = this.toLocal(this.marqueeStart);
-    const b = this.toLocal(end);
+    const layer = this.svgCanvas.querySelector<SVGGElement>('#drawing-layer');
+    const el = this.editingElement() as SVGGraphicsElement | null;
+    const map = layer && el ? pointMapperBetween(layer, el) : null;
+    if (!map) return;
+    const a = this.marqueeStart;
+    const b = end;
     const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
     const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
     if (!this.marqueeAdditive) session.clearSelection();
     session.model.subpaths.forEach((sp, spi) => {
       sp.anchors.forEach((an, i) => {
-        if (an.x >= minX && an.x <= maxX && an.y >= minY && an.y <= maxY) session.addSelect(spi, i);
+        const p = map(an.x, an.y);
+        if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) session.addSelect(spi, i);
       });
     });
     this.state.onChange_public();
