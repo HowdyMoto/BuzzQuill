@@ -791,7 +791,7 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
     if (!draggedId || draggedId === shape.id) return;
     e.preventDefault();
     // Repeat wrappers accept 'inside' drops like groups (the drop joins the cell).
-    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat');
+    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat' || shape.type === 'frame');
     clearDropMarks(li);
 
     // Resolve the depth/outdent the drop would use, so the legality check matches
@@ -825,7 +825,7 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
   li.addEventListener('dragleave', () => clearDropMarks(li));
   li.addEventListener('drop', (e) => {
     e.preventDefault();
-    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat');
+    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat' || shape.type === 'frame');
     const depth = zone === 'after' ? afterDropDepth : 0;
     clearDropMarks(li);
     if (draggedId && draggedId !== shape.id) {

@@ -207,12 +207,19 @@ export const COMMANDS: Command[] = [
     id: 'edit.delete', label: 'Delete', kind: 'action', accel: ['Delete', 'Backspace'],
     enabled: (c) => {
       const s = c.state;
+      if (s.pathEdit) return s.pathEdit.selected.size > 0;
       if (s.activePanel === 'artboards') return !!s.activeFrameId && s.artboards.length > 1;
       if (s.activePanel === 'symbols') return !!s.selectedSymbolId;
       return hasSelection(c);
     },
     run: (c) => {
       const s = c.state;
+      // Keep deletion scoped to points for the entire editing session, including
+      // key repeats after the selected points have already been removed.
+      if (s.pathEdit) {
+        if (s.pathEdit.deleteSelected()) s.commitPathEdit();
+        return;
+      }
       if (s.activePanel === 'artboards') { if (s.activeFrameId) s.removeArtboard(s.activeFrameId); return; }
       if (s.activePanel === 'symbols') { if (s.selectedSymbolId) s.removeSymbol(s.selectedSymbolId); return; }
       s.removeSelected();

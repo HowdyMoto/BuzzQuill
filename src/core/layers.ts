@@ -162,8 +162,8 @@ export class LayerManager {
     }
     if (zone === 'inside') {
       if (dragged.type === 'frame') return false; // frames stay top-level
-      if (carriesRepeat) return target.type === 'group' && !tEl.closest('[data-repeat]');
-      return target.type === 'group' || target.type === 'repeat'; // repeats hold children like groups
+      if (carriesRepeat) return (target.type === 'group' || target.type === 'frame') && !tEl.closest('[data-repeat]');
+      return target.type === 'group' || target.type === 'repeat' || target.type === 'frame'; // repeats hold children like groups
     }
     // before / after: a frame may only ever land back at the top level.
     let anchor: Element = tEl;
@@ -196,7 +196,7 @@ export class LayerManager {
     if (position === 'inside') {
       // Repeat wrappers accept children like groups — the drop joins the cell
       // and every generated instance follows on the next sync.
-      if (target.type !== 'group' && target.type !== 'repeat') return false;
+      if (target.type !== 'group' && target.type !== 'repeat' && target.type !== 'frame') return false;
       if (carriesRepeat && (target.type === 'repeat' || tEl.closest('[data-repeat]'))) return false;
       movePreservingWorld(dEl, tEl); // top of the group's stack
     } else {
