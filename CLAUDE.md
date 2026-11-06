@@ -170,3 +170,7 @@ All file saves use `beginDocumentSave` before the first await. It snapshots cont
 ## Interaction motion
 
 Use the shared motion tokens in `style.css` and `ui/feedback.ts` for chrome feedback; see `docs/interaction-motion.md`. Animate state changes once, never render loops. Keep toolbar/row hit targets stationary, modal dismissal immediate, and reduced-motion status text visible. Success checks belong after successful work; save progress belongs to the captured document tab. Toast expiry must pause for keyboard focus as well as hover.
+
+## Linked raster recovery
+
+`core/linked-images.ts` makes imported external `<image>` hrefs inert (`data-bq-image-href`) through the shared SVG sanitizer. `ui/linked-images.ts` shows a persistent canvas notice for image layers and resolves user-selected folders by longest path suffix, refusing ambiguous matches. It embeds validated bytes, optionally downsizes large image sets with an explicit quality choice, and publishes one drawing-layer history entry only after decoding completes and the owning tab/elements still match. Cancellation publishes nothing. Unresolved references survive save/reopen; resolved images are portable data URLs. Recovery currently covers drawing-layer images (including groups/crops), not images in defs-backed patterns/symbols.

@@ -1,3 +1,4 @@
+import { setupLinkedImages, updateLinkedImages } from './ui/linked-images';
 import { isContainerEl } from './core/shape-props';
 import './style.css';
 import { AppState } from './core/state';
@@ -249,6 +250,7 @@ function renderFrame(): void {
   updateStrokesPanel(state);
   updateEffectsPanel(state);
   updateFramePanel(state);
+  updateLinkedImages();
   updateWidthPanel(state);
   updateRepeatPanel(state);
   updateMarkersPanel(state);
@@ -565,6 +567,7 @@ setupInspector(state);
 setupStrokesPanel(state);
 setupEffects(state);
 setupFramePanel(state);
+setupLinkedImages(state, () => docs.activeId);
 setupWidthPanel(state);
 setupRepeatPanel(state);
 setupMarkers(state);
