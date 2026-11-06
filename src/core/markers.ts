@@ -10,6 +10,8 @@
 // / SymbolRegistry): it reaches AppState only through the MarkersHost seam.
 // ---------------------------------------------------------------------------
 
+import { MARKER_PRESETS } from './marker-presets';
+
 const SVG = 'http://www.w3.org/2000/svg';
 
 export interface MarkersHost {
@@ -27,26 +29,23 @@ export class MarkersManager {
   /** Create the standard marker library in <defs> once (idempotent). */
   ensureDefs(): void {
     const defs = this.host.ensureDefs();
-    if (defs.querySelector('[id="mk-arrow"]')) return;
-    const make = (id: string, w: string, h: string, refX: string, inner: string) => {
+    for (const preset of MARKER_PRESETS) {
+      if (defs.querySelector(`[id="${preset.id}"]`)) continue;
       const m = document.createElementNS(SVG, 'marker');
-      m.setAttribute('id', id);
+      m.setAttribute('id', preset.id);
       m.setAttribute('viewBox', '0 0 10 10');
       m.setAttribute('markerUnits', 'strokeWidth');
       m.setAttribute('orient', 'auto-start-reverse');
-      m.setAttribute('markerWidth', w); m.setAttribute('markerHeight', h);
-      m.setAttribute('refX', refX); m.setAttribute('refY', '5');
-      m.innerHTML = inner;
+      m.setAttribute('markerWidth', String(preset.size)); m.setAttribute('markerHeight', String(preset.size));
+      m.setAttribute('refX', String(preset.refX)); m.setAttribute('refY', '5');
+      m.innerHTML = preset.svg;
       defs.appendChild(m);
-    };
-    make('mk-arrow', '8', '8', '9', '<path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>');
-    make('mk-dot', '6', '6', '5', '<circle cx="5" cy="5" r="4" fill="context-stroke"/>');
-    make('mk-open', '9', '9', '8', '<path d="M1,1 L9,5 L1,9" fill="none" stroke="context-stroke" stroke-width="1.5"/>');
+    }
   }
 
   get(id: string): { start: string; end: string } {
     const el = this.host.findShapeElement(id);
-    const read = (attr: string) => el?.getAttribute(attr)?.match(/url\(#(mk-[a-z]+)\)/)?.[1] ?? '';
+    const read = (attr: string) => el?.getAttribute(attr)?.match(/url\(\s*['"]?#([^)'"\s]+)['"]?\s*\)/)?.[1] ?? '';
     return { start: read('marker-start'), end: read('marker-end') };
   }
 

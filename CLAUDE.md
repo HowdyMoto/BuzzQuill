@@ -39,6 +39,8 @@ A point-edit session belongs to exactly one selected live shape/source. `AppStat
 
 Point modes are editing intent, not just curve geometry: aligned Broken handles must stay independent. `core/path-point-modes.ts` stores validated `data-point-modes` on the geometry source (including wrapper sources). Coordinate transforms retain indices; topology edits must rewrite the modes alongside the path, and operations that generate replacement geometry must discard obsolete modes. `PathEditSession` restores them, and live node edits publish them with `d`, so history and saved SVGs preserve the user's choice. Smooth links handle directions while preserving individual lengths; Broken never auto-promotes to Smooth. The point-mode buttons use their own selected style, not the slashed no-paint toggle.
 
+**Stroke cap and endpoint pickers:** `ui/stroke-picker.ts` renders graphic choices for native caps and independent start/end markers, with keyboard navigation and explicit mixed/custom states. `core/marker-presets.ts` is the geometry source for both marker definitions and previews; keep existing marker IDs/dimensions stable. `MarkersManager.ensureDefs` checks each definition individually so older documents receive newly added styles without replacing existing markers. Regression coverage: `test/stroke-picker.spec.ts`.
+
 ## Coordinates
 
 - **Screen → world:** `Canvas.screenToSVG()` (`core/canvas.ts`) — the single entry point; every tool feeds pointer coords through it. It's manual viewBox math, not CTM-based.
