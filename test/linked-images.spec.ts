@@ -35,13 +35,13 @@ test('locates local images, embeds on save, and undoes in one step', async ({ pa
   await expect(page.getByRole('dialog')).toContainText('1 of 1 images found');
   await page.screenshot({ path: info.outputPath('locate-dialog.png') });
   await page.getByRole('button', { name: 'Add 1 image', exact: true }).click();
-  await expect(page.locator('#drawing-layer image')).toHaveAttribute('href', /^data:image\/png;base64,/);
+  await expect(page.locator('#drawing-layer image')).toHaveAttribute('href', /^(blob:|data:image\/png;base64,)/);
   await expect(page.locator('.linked-images-banner')).toBeHidden();
-  const saved = await page.evaluate(async () => (await import('/src/ui/project-file.ts')).serializeDocumentSVG((window as any).state));
+  const saved = await page.evaluate(async () => { const { svg } = await (await import('/src/ui/project-file.ts')).serializeDocumentSVGForSave((window as any).state); return svg instanceof Blob ? await svg.text() : svg; });
   await page.keyboard.press('Control+z');
   await expect(page.locator('.linked-images-banner')).toBeVisible();
   await openSvg(page, saved);
-  await expect(page.locator('#drawing-layer image')).toHaveAttribute('href', /^data:image\/png;base64,/);
+  await expect(page.locator('#drawing-layer image')).toHaveAttribute('href', /^(blob:|data:image\/png;base64,)/);
   expect(requests).toBe(0);
 });
 test('wrong folder and unreadable images keep recovery open', async ({ page }, info) => {
@@ -103,7 +103,7 @@ test('partial matches retain unresolved references through save and reopen', asy
   await expect(page.getByText('1 still missing', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Add 1 image', exact: true }).click();
   await expect(page.locator('.linked-images-banner')).toContainText('1 linked image needs locating');
-  const saved = await page.evaluate(async () => (await import('/src/ui/project-file.ts')).serializeDocumentSVG((window as any).state));
+  const saved = await page.evaluate(async () => { const { svg } = await (await import('/src/ui/project-file.ts')).serializeDocumentSVGForSave((window as any).state); return svg instanceof Blob ? await svg.text() : svg; });
   await openSvg(page, saved);
   await expect(page.locator('#drawing-layer image[data-bq-image-href]')).toHaveCount(1);
   await expect(page.locator('#drawing-layer image[href^="data:"]')).toHaveCount(1);

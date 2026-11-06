@@ -1,3 +1,4 @@
+import { bindAssets, compactAssets, assetRoots } from './raster-assets';
 import { POINT_MODES_ATTR, writePointModes } from './path-point-modes';
 import type { ToolName, ShapeData, HistoryEntry, ShapeStyle, Artboard, SymbolDef, GradientDef, GradientStop, PatternDef, ObjectShadow, AppearanceLayer, FrameGrid, Point, ExportTarget } from './types';
 import { sanitizeSvgMarkup } from './svg-sanitize';
@@ -368,6 +369,7 @@ export class AppState {
       () => this.captureSnapshot(),
       (entry) => this.restoreHistory(entry),
     );
+    assetRoots(() => this.exportHistory().entries.map(e => e.svgContent));
     this.paint = new PaintRegistry({
       ensureDefs: () => this.ensureDefs(),
       getDrawingLayer: () => this.drawingLayer,
@@ -1800,7 +1802,7 @@ export class AppState {
     this.drawingLayer.querySelectorAll('[data-boolean-preview],[data-mask-preview]').forEach((p) => p.remove());
     const editing = this.drawingLayer.querySelectorAll('[data-bool-editing]');
     editing.forEach((w) => w.removeAttribute('data-bool-editing'));
-    const svgContent = xmlSafeMarkup(this.drawingLayer.innerHTML);
+    const svgContent = compactAssets(xmlSafeMarkup(this.drawingLayer.innerHTML));
     editing.forEach((w) => w.setAttribute('data-bool-editing', ''));
 
     return {
@@ -1891,6 +1893,8 @@ export class AppState {
   }
 
   rebuildShapesFromDOM(): void {
+    bindAssets(this.drawingLayer);
+    if (this.defsElement) bindAssets(this.defsElement);
     this.normalizeCircles(); // fold imported <circle> into <ellipse> before modeling
     this.shapes = [];
     this.shapeById.clear(); // shapes are rebuilt from scratch; drop stale cache

@@ -1,3 +1,4 @@
+import { type RasterAsset, collectAssets } from './raster-assets';
 import type { ViewState } from './canvas';
 import type { DocSource } from './doc-source';
 
@@ -43,11 +44,13 @@ export interface SessionTab {
 }
 
 export interface Session {
+  assets?: RasterAsset[];
+  assetIds?: string[];
   tabs: SessionTab[];
   activeIndex: number;
 }
 
-const DB_NAME = 'buzzquill-session';
+const DB_NAME = 'buzzquill-session-v2';
 const STORE = 'session';
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // GC dead instance records after 30 days
 
@@ -102,39 +105,71 @@ export function migrateTab(st: SessionTab): SessionTab {
   return { ...rest, source };
 }
 
-function openDB(): Promise<IDBDatabase> {
+function openDB(name = DB_NAME): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains('assets')) req.result.createObjectStore('assets', { keyPath: 'id' });
       if (!req.result.objectStoreNames.contains(STORE)) {
         req.result.createObjectStore(STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
     req.onerror = () => reject(req.error);
   });
 }
 
-export async function saveSession(session: Session): Promise<void> {
-  try {
-    const db = await openDB();
-    const record: StoredRecord = { session, updatedAt: Date.now() };
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(record, INSTANCE_ID); // this instance's own slot — never clobbers another's
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    /* IndexedDB unavailable / quota exceeded — session just won't persist. */
+let pendingSession: Session | null = null;
+let writer: Promise<void> | null = null;
+export function saveSession(session: Session): Promise<void> {
+  pendingSession = session;
+  if (!writer) writer = drainSessions().finally(() => { writer = null; });
+  return writer;
+}
+async function drainSessions(): Promise<void> {
+  while (pendingSession) {
+    const session = pendingSession; pendingSession = null;
+    let db: IDBDatabase | undefined;
+    try {
+      db = await openDB();
+      const { assets = [], ...compact } = session;
+      const record: StoredRecord = { session: { ...compact, assetIds: assets.map(a => a.id) }, updatedAt: Date.now() };
+      await new Promise<void>((resolve, reject) => {
+        const tx = db!.transaction([STORE, 'assets'], 'readwrite');
+        const store = tx.objectStore('assets');
+        for (const asset of assets) {
+          const request = store.getKey(asset.id);
+          request.onsuccess = () => { if (request.result === undefined) store.put(asset); };
+        }
+        tx.objectStore(STORE).put(record, INSTANCE_ID);
+        const referenced = new Set<string>();
+        const sessions = tx.objectStore(STORE).openCursor();
+        sessions.onsuccess = () => {
+          const cursor = sessions.result;
+          if (cursor) {
+            const value = coerce(cursor.value);
+            for (const id of value?.session.assetIds ?? []) referenced.add(id);
+            cursor.continue();
+          } else {
+            const keys = store.openKeyCursor();
+            keys.onsuccess = () => { const key = keys.result; if (key) { if (!referenced.has(String(key.key))) store.delete(key.key); key.continue(); } };
+          }
+        };
+        tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+      });
+    } catch { /* Keep live assets usable even when session storage is unavailable. */ }
+    finally { db?.close(); collectAssets(); }
   }
 }
 
 export async function loadSession(): Promise<Session | null> {
+  return await loadFromDatabase(DB_NAME) ?? await loadFromDatabase('buzzquill-session');
+}
+async function loadFromDatabase(name: string): Promise<Session | null> {
   try {
-    const db = await openDB();
+    const db = await openDB(name);
     return await new Promise<Session | null>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite'); // rw so we can GC dead records in the same pass
+      const tx = db.transaction(db.objectStoreNames.contains('assets') ? [STORE, 'assets'] : [STORE], 'readwrite'); // rw so we can GC dead records in the same pass
       const store = tx.objectStore(STORE);
       const req = store.openCursor();
       let best: StoredRecord | null = null;
@@ -151,7 +186,21 @@ export async function loadSession(): Promise<Session | null> {
         // Restore the most recently written session (the instance the user last
         // touched); crucially we NEVER delete another instance's record here, so a
         // still-open second instance can always recover its own work.
-        resolve(best ? best.session : null);
+        if (!best) resolve(null);
+        else {
+          const selected = best.session; const loaded: RasterAsset[] = [];
+          const ids = selected.assetIds ?? [];
+          if (!ids.length) resolve(selected);
+          let left = ids.length;
+          for (const id of ids) {
+            const request = tx.objectStore('assets').get(id);
+            request.onsuccess = () => {
+              if (request.result) loaded.push(request.result);
+              if (!--left) resolve({ ...selected, assets: loaded });
+            };
+            request.onerror = () => reject(request.error);
+          }
+        }
         // Best-effort GC of stale OTHER-instance records, so reloads don't grow the
         // store forever. Never touches this instance's slot or the one just chosen.
         const g = store.openCursor();
@@ -164,6 +213,7 @@ export async function loadSession(): Promise<Session | null> {
         };
       };
       req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close();
     });
   } catch {
     return null;

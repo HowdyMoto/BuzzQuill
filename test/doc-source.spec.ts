@@ -48,11 +48,13 @@ test('a fresh document has no source; renaming a tab renames only the document',
 });
 
 test('a session saved by the cloud-backed build restores as an unsaved document, title kept', async ({ page }) => {
-  await boot(page);
-  // Write a record in the OLD shape (fileHandle + cloudDoc), the way the previous
-  // build left it, then reload. It goes under its OWN key — the reload's unload
-  // flush rewrites this instance's slot — and is dated newest, so the restore's
-  // "most recently written session wins" rule picks it.
+  // Seed the previous build's database BEFORE the new app runs. Booting first
+  // would race its async database creation and let unload write a new-format
+  // session, which correctly takes precedence over legacy migration.
+  await page.route('**/__legacy-session-seed__', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Legacy session fixture</title>',
+  }));
+  await page.goto('/__legacy-session-seed__');
   await page.evaluate(async () => {
     const id = 'legacy-build-instance';
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><metadata class="svgmaker-state">{"app":"BuzzQuill","version":1,"artboards":[],"activeFrameId":null,"shapes":[],"canvasBg":"#ffffff"}</metadata><g class="svgmaker-doc"><rect id="shape-1" x="20" y="20" width="100" height="60" fill="#39f"/></g></svg>';
@@ -70,6 +72,7 @@ test('a session saved by the cloud-backed build restores as an unsaved document,
     };
     await new Promise<void>((resolve, reject) => {
       const req = indexedDB.open('buzzquill-session', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('session');
       req.onsuccess = () => {
         const tx = req.result.transaction('session', 'readwrite');
         tx.objectStore('session').put(record, id);
@@ -83,7 +86,6 @@ test('a session saved by the cloud-backed build restores as an unsaved document,
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.reload();
   await boot(page);
   // The restore is async after boot; the tab taking its stored name is the signal.
   await expect(page.locator('.doc-tab.active .doc-tab-name')).toHaveText('Old cloud board');

@@ -1,3 +1,4 @@
+import { ASSET_ATTR, bindAssets } from './raster-assets';
 import type { GradientDef, GradientStop, PatternDef } from './types';
 import type { DocumentContext } from './document-context';
 import { sanitizeSvgElement } from './svg-sanitize';
@@ -263,6 +264,7 @@ export class PaintRegistry {
       preset: def.preset,
       presetColor: def.presetColor ?? '#000000',
       imageDataUrl: def.imageDataUrl,
+      imageAssetId: def.imageAssetId,
       weight: def.weight,
       scale: def.scale ?? 1,
       rotation: def.rotation ?? 0,
@@ -375,9 +377,10 @@ export class PaintRegistry {
   private buildPatternCell(pat: PatternDef, isSource: boolean): SVGElement | null {
     const g = document.createElementNS(NS, 'g');
     if (isSource) g.setAttribute('data-pat-src', '');
-    if (pat.type === 'image' && pat.imageDataUrl) {
+    if (pat.type === 'image' && (pat.imageDataUrl || pat.imageAssetId)) {
       const img = document.createElementNS(NS, 'image');
-      img.setAttribute('href', pat.imageDataUrl);
+      if (pat.imageAssetId) { img.setAttribute(ASSET_ATTR, pat.imageAssetId); bindAssets(img); }
+      else img.setAttribute('href', pat.imageDataUrl!);
       img.setAttribute('width', String(pat.tileWidth));
       img.setAttribute('height', String(pat.tileHeight));
       img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
@@ -498,7 +501,8 @@ export class PaintRegistry {
       // old scale-derived thickness rather than inventing one.
       weight: child.hasAttribute('data-pat-weight')
         ? num('data-pat-weight', 2) : undefined,
-      imageDataUrl: type === 'image' ? href : undefined,
+      imageDataUrl: type === 'image' && !imageEl?.hasAttribute(ASSET_ATTR) ? href : undefined,
+      imageAssetId: type === 'image' ? imageEl?.getAttribute(ASSET_ATTR) ?? undefined : undefined,
       sourceMarkup,
       sourceId: imported.getAttribute('data-pat-source') ?? undefined,
       tileType: (imported.getAttribute('data-pat-tiletype') as PatternDef['tileType']) ?? undefined,

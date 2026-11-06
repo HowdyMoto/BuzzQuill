@@ -1,3 +1,5 @@
+import { showToast } from '../ui/toast';
+import { assetRoots, portableSvg, compactAssets, bindAssets, assetSnapshot } from './raster-assets';
 import type { ShapeData, ShapeStyle } from './types';
 import { sanitizeSvgElement } from './svg-sanitize';
 import { allShapeNames, copyName } from './naming';
@@ -104,6 +106,7 @@ export class ClipboardManager {
   private readonly host: ClipboardHost;
 
   constructor(host: ClipboardHost) {
+    assetRoots(() => this.clipboard.flatMap(e => [e.markup, e.defs ?? '']));
     this.host = host;
   }
 
@@ -144,14 +147,26 @@ export class ClipboardManager {
   }
 
   /** Replace the clipboard and mirror it to the system clipboard for cross-app paste. */
+  private copyGeneration = 0;
   private setClipboard(entries: ClipboardEntry[]): void {
-    this.clipboard = entries;
+    const generation = ++this.copyGeneration;
+    this.clipboard = entries.map(e => ({ ...e, markup: compactAssets(e.markup) }));
     this.pasteOffset = 0;
     const markup = entries.map(e => e.markup).join('');
     // `data-bq-clip` marks this as our OWN copy so paste can tell it apart from
     // SVG copied in another app, and prefer the (richer) internal buffer for it.
     const svgWrapper = `<svg xmlns="http://www.w3.org/2000/svg" data-bq-clip="1">${markup}</svg>`;
-    navigator.clipboard?.writeText(svgWrapper).catch(() => { /* ignore */ });
+    if (svgWrapper.includes('data-bq-raster=')) {
+      if (assetSnapshot([svgWrapper]).reduce((n, a) => n + a.original.size, 0) > 48 * 1024 * 1024) {
+        showToast('Copied within BuzzQuill. To transfer this large selection to another app, export it as SVG.', 8000, undefined, 'info');
+        return;
+      }
+      void portableSvg(svgWrapper).then(async blob => {
+        if (blob.size > 64 * 1024 * 1024) return; // Browser text clipboards cannot safely hold giant SVGs; internal copy remains available.
+        const text = await blob.text();
+        if (generation === this.copyGeneration) await navigator.clipboard?.writeText(text);
+      }).catch(() => {});
+    } else navigator.clipboard?.writeText(svgWrapper).catch(() => {});
   }
 
   copyShape(id: string): void {
@@ -316,6 +331,7 @@ export class ClipboardManager {
       if (offset !== 0) this.host.offsetElement(newEl, offset, offset);
     }
 
+    bindAssets(newEl);
     this.host.getShapes().push({
       id: newId,
       type: entry.type,

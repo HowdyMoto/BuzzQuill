@@ -1,3 +1,4 @@
+import { originalAsset } from './raster-assets';
 // ---------------------------------------------------------------------------
 // Image Trace — turn a raster image into editable vector paths.
 //
@@ -136,7 +137,10 @@ function loadBitmap(href: string): Promise<HTMLImageElement> {
 
 /** Draw the traceable region into a canvas, capped to `maxPx` on its long edge. */
 async function rasterize(t: Traceable, maxPx: number): Promise<ImageData> {
-  const bmp = await loadBitmap(t.href);
+  const original = originalAsset(t.img);
+  const url = original ? URL.createObjectURL(original) : null;
+  let bmp: HTMLImageElement;
+  try { bmp = await loadBitmap(url ?? t.href); } finally { if (url) URL.revokeObjectURL(url); }
   const natW = bmp.naturalWidth || bmp.width, natH = bmp.naturalHeight || bmp.height;
   if (!natW || !natH) throw new TraceError('That image has no pixels to trace.');
 

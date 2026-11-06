@@ -1,3 +1,4 @@
+import { scheduleRasterDetail } from './core/raster-assets';
 import { setupLinkedImages, updateLinkedImages } from './ui/linked-images';
 import { isContainerEl } from './core/shape-props';
 import './style.css';
@@ -246,6 +247,7 @@ function renderFrame(): void {
     return;
   }
 
+  scheduleRasterDetail();
   updatePropertiesPanel(state);
   updateStrokesPanel(state);
   updateEffectsPanel(state);
