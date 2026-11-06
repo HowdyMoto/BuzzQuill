@@ -531,6 +531,7 @@ document.getElementById('tb-default')?.addEventListener('click', () => runComman
 // Frame rulers re-render on view change (their tick spacing & labels are sized in
 // screen units, so they must refresh when the zoom changes).
 canvas.setOnViewChange(() => {
+  scheduleRasterDetail();
   activeTool.onViewChange?.();
   renderFrames(state, svgCanvas, canvas.getZoom()); // keep frame name/dimension labels a constant on-screen size while zooming
   renderFrameGuides(state, svgCanvas, canvas.getZoom());
@@ -635,8 +636,9 @@ svgCanvas.setAttribute('data-tool', 'select');
 // the attempt do we start persisting, so a restore can't be clobbered by a save.
 void (async () => {
   try {
+    const bootId = docs.activeId, bootVersion = state.contentVersion;
     const session = await loadSession();
-    if (session) docs.restoreSession(session); // fires onStateChange + tab render
+    if (session) docs.restoreSession(session, docs.activeId !== bootId || state.contentVersion !== bootVersion); // fires onStateChange + tab render
   } catch { /* corrupt/unavailable session — start with the blank document */ }
   sessionRestored = true;
 })();
