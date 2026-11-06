@@ -14,6 +14,7 @@
 
 let overlayEl: HTMLElement | null = null;
 let labelEl: HTMLElement | null = null;
+const operations = new Map<symbol, string>();
 
 const STYLE_ID = 'loading-overlay-style';
 
@@ -98,12 +99,15 @@ function nextPaint(): Promise<void> {
  * `work`. The overlay is always removed afterwards, even if `work` throws.
  * Returns whatever `work` returns.
  */
-export async function withLoadingOverlay<T>(label: string, work: () => T): Promise<T> {
+export async function withLoadingOverlay<T>(label: string, work: () => T | Promise<T>): Promise<T> {
+  const operation = Symbol(); operations.set(operation, label);
   showLoadingOverlay(label);
-  await nextPaint();
   try {
-    return work();
+    await nextPaint();
+    return await work();
   } finally {
-    hideLoadingOverlay();
+    operations.delete(operation);
+    const remaining = [...operations.values()].at(-1);
+    if (remaining) showLoadingOverlay(remaining); else hideLoadingOverlay();
   }
 }

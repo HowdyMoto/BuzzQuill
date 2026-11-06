@@ -130,3 +130,39 @@ test('missing drawing data is rejected without clearing existing work or undo', 
   expect(result.message).toContain('no drawing data');
   expect(result.paths).toBe(1); expect(result.historyPreserved).toBe(true);
 });
+
+
+test('large file open shows progress before reading and keeps it visible until the drawing is ready', async ({ page }) => {
+  await page.goto('/'); await page.waitForFunction(() => !!(window as any).state);
+  await page.evaluate(async () => {
+    const file = new File(['<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L30 30"/><!--', ' '.repeat(1_100_000), '--></svg>'], 'large.svg');
+    const read = file.arrayBuffer.bind(file);
+    file.arrayBuffer = async () => {
+      (window as any).overlayAtRead = getComputedStyle(document.querySelector('.loading-overlay')!).display !== 'none';
+      await new Promise<void>(r => { (window as any).finishRead = r; });
+      return read();
+    };
+    const io = await import('/src/ui/project-file.ts');
+    (window as any).openingLarge = io.openHandle((window as any).state, { name: file.name, getFile: async () => file } as FileSystemFileHandle);
+  });
+  await expect(page.getByRole('progressbar', { name: 'Opening large.svg…' })).toBeVisible();
+  await page.waitForFunction(() => !!(window as any).finishRead);
+  expect(await page.evaluate(() => (window as any).overlayAtRead)).toBe(true);
+  await page.evaluate(async () => { (window as any).finishRead(); await (window as any).openingLarge; });
+  await expect(page.getByRole('progressbar')).toBeHidden();
+  await expect(page.locator('#drawing-layer path')).toHaveCount(1);
+});
+
+test('loading feedback survives overlapping work and clears after a read error', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const { withLoadingOverlay } = await import('/src/ui/loading-overlay.ts');
+    (window as any).firstLoad = withLoadingOverlay('Opening first.svg…', () => new Promise<void>(r => { (window as any).finishFirst = r; }));
+    (window as any).secondLoad = withLoadingOverlay('Opening second.svg…', () => new Promise<void>((_, reject) => { (window as any).failSecond = () => reject(new Error('Read failed')); })).catch(() => {});
+  });
+  await page.waitForFunction(() => !!(window as any).finishFirst && !!(window as any).failSecond);
+  await page.evaluate(async () => { (window as any).finishFirst(); await (window as any).firstLoad; });
+  await expect(page.getByRole('progressbar', { name: 'Opening second.svg…' })).toBeVisible();
+  await page.evaluate(async () => { (window as any).failSecond(); await (window as any).secondLoad; });
+  await expect(page.getByRole('progressbar')).toBeHidden();
+});

@@ -9,7 +9,6 @@ import {
   saveFilePicker,
   writeHandle,
   ensureWritePermission,
-  readHandle,
   readSvgFile,
   downloadFile,
 } from '../core/file-access';
@@ -333,6 +332,17 @@ export async function loadDocumentStringWithFeedback(
   return withLoadingOverlay(`Opening ${name}…`, apply);
 }
 
+/** Cover file reading and image preparation, even when the resulting SVG is tiny. */
+export async function loadSvgFileWithFeedback(
+  state: AppState, file: Blob, name: string, canCommit = () => true,
+): Promise<boolean> {
+  const load = async () => {
+    const text = await readSvgFile(file);
+    return loadDocumentStringWithFeedback(state, text, name, canCommit);
+  };
+  return file.size >= HEAVY_DOC_BYTES ? withLoadingOverlay(`Opening ${name}…`, load) : load();
+}
+
 // ---------------------------------------------------------------------------
 // Save / Open (File System Access with download fallback)
 // ---------------------------------------------------------------------------
@@ -481,8 +491,7 @@ export async function pickDocumentToOpen(): Promise<PendingOpen | null> {
   return {
     name: file.name,
     load: async (s, canCommit) => {
-      const text = await readSvgFile(file);
-      if (!await loadDocumentStringWithFeedback(s, text, file.name, canCommit)) return;
+      if (!await loadSvgFileWithFeedback(s, file, file.name, canCommit)) return;
       // Can't write back without FS Access — but the file it came from is on disk.
       adoptSource(null, file.name, true);
     },
@@ -512,8 +521,8 @@ export async function openTextWithoutHandle(state: AppState, text: string, name:
 
 /** Open a document directly from a handle (used by Open and Recent Files). */
 export async function openHandle(state: AppState, handle: FileSystemFileHandle, canCommit = () => true): Promise<void> {
-  const text = await readHandle(handle);
-  if (!await loadDocumentStringWithFeedback(state, text, handle.name, canCommit)) return;
+  const file = await handle.getFile();
+  if (!await loadSvgFileWithFeedback(state, file, handle.name, canCommit)) return;
   adoptSource({ kind: 'local', handle }, handle.name);
   await rememberRecentFile(handle);
 }

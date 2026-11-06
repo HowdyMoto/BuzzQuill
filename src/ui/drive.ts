@@ -19,7 +19,6 @@
 import type { AppState } from '../core/state';
 import type { DocumentManager } from '../core/document-manager';
 import { getDocSource } from '../core/doc-source';
-import { readSvgFile } from '../core/file-access';
 import { isDriveConfigured } from '../lib/google-config';
 import {
   ensureToken, isDriveConnected, canDisconnectDrive, revokeToken,
@@ -28,7 +27,7 @@ import {
 } from '../lib/google-drive';
 import { pickDriveFile } from '../lib/google-picker';
 import {
-  adoptSource, loadDocumentStringWithFeedback, pendingFromPdfFile,
+  adoptSource, loadSvgFileWithFeedback, pendingFromPdfFile,
   beginDocumentSave, type PendingOpen,
 } from './project-file';
 import { rememberDriveFile, forgetDriveFile, setupDriveRecentMenu } from './drive-recent';
@@ -143,11 +142,10 @@ async function pendingFromDrive(id: string): Promise<PendingOpen | null> {
     // A PDF imports as pages, like a local one; the result has no source to save to.
     return pendingFromPdfFile(new File([blob], meta.name, { type: 'application/pdf' }));
   }
-  const text = await readSvgFile(blob);
   return {
     name: meta.name,
     load: async (state, canCommit) => {
-      if (!await loadDocumentStringWithFeedback(state, text, meta.name, canCommit)) return;
+      if (!await loadSvgFileWithFeedback(state, blob, meta.name, canCommit)) return;
       adoptSource({ kind: 'drive', fileId: meta.id, name: meta.name, modifiedTime: meta.modifiedTime }, meta.name);
       rememberDriveFile({ id: meta.id, name: meta.name });
     },

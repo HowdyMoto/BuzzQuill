@@ -19,8 +19,7 @@ import type { DocumentManager } from '../core/document-manager';
 import type { CanvasController } from '../core/canvas';
 import type { Point } from '../core/types';
 import { importAnyFile } from './import-image';
-import { openTextWithoutHandle } from './project-file';
-import { readSvgFile } from '../core/file-access';
+import { loadSvgFileWithFeedback, adoptSource } from './project-file';
 import { showToast } from './toast';
 
 const ACCEPT_EXT = /\.(svg|svgmaker|pdf|png|jpe?g|gif|webp|bmp|avif)$/i;
@@ -240,8 +239,8 @@ async function openFileAsNewDocument(state: AppState, docs: DocumentManager, fil
   const canCommit = () => docs.activeId === owner && state.contentVersion === version;
   try {
     if (isDoc) {
-      const text = await readSvgFile(file);
-      if (!await openTextWithoutHandle(state, text, file.name, canCommit)) return;
+      if (!await loadSvgFileWithFeedback(state, file, file.name, canCommit)) return;
+      adoptSource(null, file.name, true);
     } else {
       await importAnyFile(state, file);
     }
