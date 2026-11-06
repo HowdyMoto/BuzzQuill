@@ -1,4 +1,4 @@
-import { compactAssets, portableSvg, pinAssets, releasePrepared, assetIds } from '../core/raster-assets';
+import { compactAssets, portableSvg, pinAssets, releasePrepared, assetIds, collectAssets } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import type { Artboard, ShapeStyle } from '../core/types';
 import type { FilePickerType } from '../core/file-access';
@@ -177,7 +177,9 @@ export async function serializeDocumentSVGForSave(state: AppState, base = serial
 
 /** Snapshot content and its owner together, before any asynchronous interaction. */
 export function beginDocumentSave(state: AppState) {
-  const snapshot = serializeDocumentSVG(state);
+  let snapshot: string;
+  try { snapshot = serializeDocumentSVG(state); }
+  catch (error) { showToast(error instanceof Error ? error.message : 'Could not save this drawing safely.'); return null; }
   const target = captureSaveTarget(state, snapshot);
   if (!target) {
     showToast('This document is already being saved.');
@@ -222,10 +224,6 @@ export function loadDocumentSVG(state: AppState, svgString: string): void {
   const svgEl = doc.querySelector('svg');
   if (!svgEl) throw new Error('File is not a valid SVG.');
 
-  // A point edit left open would point at a shape in the document being replaced.
-  state.exitPathEdit();
-  state.importHistory({ entries: [], index: -1, savedIndex: 0 });
-
   // Look for our embedded editor metadata.
   let meta: DocMeta | null = null;
   const metaEl = svgEl.querySelector('metadata.svgmaker-state') ?? svgEl.querySelector('metadata');
@@ -236,12 +234,16 @@ export function loadDocumentSVG(state: AppState, svgString: string): void {
     } catch { /* not our metadata — treat as a foreign SVG */ }
   }
 
+  if (meta?.shapes?.length && !svgEl.querySelector('g.svgmaker-doc')?.children.length) {
+    throw new Error('This file contains editor settings but no drawing data. The drawing was not saved in this copy. Try an earlier copy or a recovered tab.');
+  }
+  // Validate before touching the current drawing or its undo history.
+  if (meta && meta.version > FORMAT_VERSION) throw new Error(`This file was made with a newer BuzzQuill (v${meta.version}). Please update.`);
+  state.exitPathEdit();
+  state.importHistory({ entries: [], index: -1, savedIndex: 0 });
+
   if (meta) {
     // ---- Our document: restore everything ----
-    if (meta.version > FORMAT_VERSION) {
-      throw new Error(`This file was made with a newer BuzzQuill (v${meta.version}). Please update.`);
-    }
-
     state.clearDefs();
     state.importDefsFrom(svgEl);
 
@@ -321,13 +323,14 @@ const HEAVY_DOC_BYTES = 1_000_000;
  * enough that the synchronous import would otherwise look like a frozen app.
  */
 export async function loadDocumentStringWithFeedback(
-  state: AppState, text: string, name: string,
-): Promise<void> {
-  if (text.length < HEAVY_DOC_BYTES) {
-    loadDocumentString(state, text);
-    return;
-  }
-  await withLoadingOverlay(`Opening ${name}…`, () => loadDocumentString(state, text));
+  state: AppState, text: string, name: string, canCommit = () => true,
+): Promise<boolean> {
+  const apply = () => {
+    if (!canCommit()) { releasePrepared(assetIds(text)); collectAssets(); return false; }
+    loadDocumentString(state, text); return true;
+  };
+  if (text.length < HEAVY_DOC_BYTES) return apply();
+  return withLoadingOverlay(`Opening ${name}…`, apply);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +402,7 @@ export interface PendingOpen {
   /** File name, used to title a freshly-created tab before content loads. */
   name: string;
   /** Load the picked document into `state` (no further prompts). */
-  load: (state: AppState) => Promise<void>;
+  load: (state: AppState, canCommit?: () => boolean) => Promise<void>;
 }
 
 async function pdfChoiceOrNull(): Promise<PdfImportChoice | null> {
@@ -443,7 +446,7 @@ export async function pendingFromHandle(handle: FileSystemFileHandle): Promise<P
       await rememberRecentFile(handle);
     } };
   }
-  return { name: handle.name, load: (s) => openHandle(s, handle) };
+  return { name: handle.name, load: (s, canCommit) => openHandle(s, handle, canCommit) };
 }
 
 /**
@@ -477,9 +480,9 @@ export async function pickDocumentToOpen(): Promise<PendingOpen | null> {
   }
   return {
     name: file.name,
-    load: async (s) => {
+    load: async (s, canCommit) => {
       const text = await readSvgFile(file);
-      await loadDocumentStringWithFeedback(s, text, file.name);
+      if (!await loadDocumentStringWithFeedback(s, text, file.name, canCommit)) return;
       // Can't write back without FS Access — but the file it came from is on disk.
       adoptSource(null, file.name, true);
     },
@@ -501,15 +504,16 @@ function pickFileViaInput(accept: string): Promise<File | null> {
 }
 
 /** Load document text that has no writable handle (e.g. a dropped file). */
-export async function openTextWithoutHandle(state: AppState, text: string, name: string): Promise<void> {
-  await loadDocumentStringWithFeedback(state, text, name);
+export async function openTextWithoutHandle(state: AppState, text: string, name: string, canCommit = () => true): Promise<boolean> {
+  if (!await loadDocumentStringWithFeedback(state, text, name, canCommit)) return false;
   adoptSource(null, name, true); // the dropped file is still on disk
+  return true;
 }
 
 /** Open a document directly from a handle (used by Open and Recent Files). */
-export async function openHandle(state: AppState, handle: FileSystemFileHandle): Promise<void> {
+export async function openHandle(state: AppState, handle: FileSystemFileHandle, canCommit = () => true): Promise<void> {
   const text = await readHandle(handle);
-  await loadDocumentStringWithFeedback(state, text, handle.name);
+  if (!await loadDocumentStringWithFeedback(state, text, handle.name, canCommit)) return;
   adoptSource({ kind: 'local', handle }, handle.name);
   await rememberRecentFile(handle);
 }

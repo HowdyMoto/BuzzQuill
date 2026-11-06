@@ -197,7 +197,9 @@ export function setupFileDrop(state: AppState, docs: DocumentManager, canvas: Ca
         // once would stack dialogs on top of each other. Cascade so a multi-file
         // drop doesn't stack every item on the same pixel.
         let i = 0;
+        const generation = state.documentGeneration;
         for (const f of files) {
+          if (generation !== state.documentGeneration) break;
           const p = at ? { x: at.x + i * 20, y: at.y + i * 20 } : undefined;
           await importAnyFile(state, f, p);
           i++;
@@ -233,16 +235,19 @@ export function setupFileDrop(state: AppState, docs: DocumentManager, canvas: Ca
 async function openFileAsNewDocument(state: AppState, docs: DocumentManager, file: File): Promise<void> {
   const isDoc = /\.(svg|svgmaker)$/i.test(file.name) || file.type === 'image/svg+xml';
   docs.newTab();          // switches to the new tab, so `state` now holds it
+  const owner = docs.activeId;
+  const version = state.contentVersion;
+  const canCommit = () => docs.activeId === owner && state.contentVersion === version;
   try {
     if (isDoc) {
       const text = await readSvgFile(file);
-      await openTextWithoutHandle(state, text, file.name);
+      if (!await openTextWithoutHandle(state, text, file.name, canCommit)) return;
     } else {
       await importAnyFile(state, file);
     }
     // Name the TAB, not just the document: openTextWithoutHandle sets the project
     // name, but the tab keeps whatever newTab() minted ("Untitled 2") until told.
-    docs.renameTab(docs.activeId, file.name);
+    if (docs.activeId === owner) docs.renameTab(owner, file.name);
   } catch (err) {
     showToast(`Couldn’t open “${file.name}”: ${err instanceof Error ? err.message : String(err)}`);
   }

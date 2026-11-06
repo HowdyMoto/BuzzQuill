@@ -138,8 +138,8 @@ async function drainSessions(): Promise<void> {
         const tx = db!.transaction([STORE, 'assets'], 'readwrite');
         const store = tx.objectStore('assets');
         for (const asset of assets) {
-          const request = store.getKey(asset.id);
-          request.onsuccess = () => { if (request.result === undefined) store.put(asset); };
+          const request = store.get(asset.id);
+          request.onsuccess = () => { if (request.result === undefined || (request.result.previewPending && !asset.previewPending)) store.put(asset); };
         }
         tx.objectStore(STORE).put(record, INSTANCE_ID);
         const referenced = new Set<string>();

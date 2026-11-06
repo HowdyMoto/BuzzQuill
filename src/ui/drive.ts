@@ -146,8 +146,8 @@ async function pendingFromDrive(id: string): Promise<PendingOpen | null> {
   const text = await readSvgFile(blob);
   return {
     name: meta.name,
-    load: async (state) => {
-      await loadDocumentStringWithFeedback(state, text, meta.name);
+    load: async (state, canCommit) => {
+      if (!await loadDocumentStringWithFeedback(state, text, meta.name, canCommit)) return;
       adoptSource({ kind: 'drive', fileId: meta.id, name: meta.name, modifiedTime: meta.modifiedTime }, meta.name);
       rememberDriveFile({ id: meta.id, name: meta.name });
     },

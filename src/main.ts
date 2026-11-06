@@ -635,8 +635,9 @@ svgCanvas.setAttribute('data-tool', 'select');
 // the attempt do we start persisting, so a restore can't be clobbered by a save.
 void (async () => {
   try {
+    const bootId = docs.activeId, bootVersion = state.contentVersion;
     const session = await loadSession();
-    if (session) docs.restoreSession(session); // fires onStateChange + tab render
+    if (session) docs.restoreSession(session, docs.activeId !== bootId || state.contentVersion !== bootVersion); // fires onStateChange + tab render
   } catch { /* corrupt/unavailable session — start with the blank document */ }
   sessionRestored = true;
 })();

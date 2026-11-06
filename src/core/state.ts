@@ -1,3 +1,4 @@
+import { checkedInnerHTML } from './checked-markup';
 import { bindAssets, compactAssets, assetRoots } from './raster-assets';
 import { POINT_MODES_ATTR, writePointModes } from './path-point-modes';
 import type { ToolName, ShapeData, HistoryEntry, ShapeStyle, Artboard, SymbolDef, GradientDef, GradientStop, PatternDef, ObjectShadow, AppearanceLayer, FrameGrid, Point, ExportTarget } from './types';
@@ -1775,13 +1776,18 @@ export class AppState {
   /** Record the current document as an undo step. Delegates the navigation
    *  bookkeeping to {@link History}; the document-specific snapshot is built by
    *  {@link captureSnapshot}. */
+  /** Monotonic across history resets, for asynchronous document ownership. */
+  contentVersion = 0;
+  documentGeneration = 0;
   saveHistory(): void {
+    this.contentVersion++;
     this.historyMgr.save();
   }
 
   /** Fold subsequent changes into the current undo entry instead of adding a new
    *  one (used to coalesce a held-arrow nudge run into one step). See History.amend. */
   amendHistory(): void {
+    this.contentVersion++;
     this.historyMgr.amend();
   }
 
@@ -1802,8 +1808,9 @@ export class AppState {
     this.drawingLayer.querySelectorAll('[data-boolean-preview],[data-mask-preview]').forEach((p) => p.remove());
     const editing = this.drawingLayer.querySelectorAll('[data-bool-editing]');
     editing.forEach((w) => w.removeAttribute('data-bool-editing'));
-    const svgContent = compactAssets(xmlSafeMarkup(this.drawingLayer.innerHTML));
-    editing.forEach((w) => w.setAttribute('data-bool-editing', ''));
+    let svgContent: string;
+    try { svgContent = compactAssets(xmlSafeMarkup(checkedInnerHTML(this.drawingLayer))); }
+    finally { editing.forEach((w) => w.setAttribute('data-bool-editing', '')); }
 
     return {
       svgContent,
@@ -1827,9 +1834,9 @@ export class AppState {
   /** Mark the current state as the saved baseline (call after save/open/new). */
   markClean(): void { this.historyMgr.markClean(); }
 
-  undo(): boolean { return this.historyMgr.undo(); }
+  undo(): boolean { const changed = this.historyMgr.undo(); if (changed) this.contentVersion++; return changed; }
 
-  redo(): boolean { return this.historyMgr.redo(); }
+  redo(): boolean { const changed = this.historyMgr.redo(); if (changed) this.contentVersion++; return changed; }
 
   get canUndo(): boolean { return this.historyMgr.canUndo; }
   get canRedo(): boolean { return this.historyMgr.canRedo; }
@@ -3253,7 +3260,7 @@ export class AppState {
   clearDefs(): void { this.svgIo.clearDefs(); }
   /** Public wrapper: import gradients/patterns/symbols from a parsed SVG element. */
   importDefsFrom(svgEl: Element): void { this.svgIo.importDefsFrom(svgEl); }
-  importSVGContent(svgString: string): void { this.svgIo.importSVGContent(svgString); }
+  importSVGContent(svgString: string): void { this.documentGeneration++; this.svgIo.importSVGContent(svgString); }
 
   /**
    * APPEND a foreign SVG's artwork to the current document as a single group,
@@ -3293,12 +3300,13 @@ export class AppState {
     this.notify();
     return true;
   }
-  importSVGMarkup(svgMarkup: string): void { this.svgIo.importSVGMarkup(svgMarkup); }
+  importSVGMarkup(svgMarkup: string): void { this.documentGeneration++; this.svgIo.importSVGMarkup(svgMarkup); }
   /** Whether the last importSVGContent source carried SMIL animation (stripped by
    *  the sanitizer) — read by the import UI to warn. Delegates to SvgIoManager. */
   get lastImportHadAnimation(): boolean { return this.svgIo.lastImportHadAnimation; }
 
   clearAll(): void {
+    this.documentGeneration++;
     this.shapeById.clear();
     this.drawingLayer.innerHTML = '';
     this.shapes = [];

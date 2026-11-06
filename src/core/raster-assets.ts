@@ -1,6 +1,6 @@
 /** Image bytes live once, outside editable SVG/history. Only previews enter the live DOM. */
 export const ASSET_ATTR = 'data-bq-raster';
-export interface RasterAsset { id: string; original: Blob; preview: Blob; width: number; height: number; }
+export interface RasterAsset { id: string; original: Blob; preview: Blob; width: number; height: number; previewPending?: boolean; }
 interface LiveAsset extends RasterAsset { url: string; }
 const assets = new Map<string, LiveAsset>();
 const roots = new Set<() => Iterable<string>>();
@@ -16,11 +16,14 @@ export function assetSnapshot(markups: Iterable<string>): RasterAsset[] {
   const ids = new Set([...markups].flatMap(assetIds));
   return [...ids].map(id => {
     const a = assets.get(id); if (!a) throw new Error('An original image is unavailable. Please locate it again before saving.');
-    return { id, original: a.original, preview: a.preview, width: a.width, height: a.height };
+    return { id, original: a.original, preview: a.preview, width: a.width, height: a.height, previewPending: a.previewPending };
   });
 }
 export function restoreAssets(records: RasterAsset[]): void {
-  for (const a of records) if (!assets.has(a.id)) assets.set(a.id, { ...a, url: URL.createObjectURL(a.preview) });
+  for (const a of records) if (!assets.has(a.id)) {
+    assets.set(a.id, { ...a, url: URL.createObjectURL(a.preview) });
+    if (a.previewPending) { previewQueue.add(a.id); void drainPreviews(); }
+  }
 }
 export function collectAssets(): void {
   const retained = new Set<string>([...pins.keys(), ...preparing]);
@@ -53,9 +56,12 @@ export function attachAsset(el: Element, id: string): void {
   preparing.delete(id);
   el.setAttribute(ASSET_ATTR, id); el.removeAttribute('data-bq-image-href'); bindAssets(el);
 }
-async function dimensions(file: Blob): Promise<{ width: number; height: number } | null> {
-  const b = new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer());
+export async function dimensions(file: Blob): Promise<{ width: number; height: number } | null> {
+  return dimensionsFromBytes(new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer()));
+}
+function dimensionsFromBytes(b: Uint8Array): { width: number; height: number } | null {
   const view = new DataView(b.buffer);
+  if (b.length >= 10 && b[0] === 71 && b[1] === 73 && b[2] === 70) return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
   if (b.length >= 24 && view.getUint32(0) === 0x89504e47) return { width: view.getUint32(16), height: view.getUint32(20) };
   if (b[0] === 0xff && b[1] === 0xd8) {
     let i = 2, orientation = 1;
@@ -190,7 +196,7 @@ async function refreshDetail(): Promise<void> {
     for (const [id, edge] of wanted) {
       if (generation !== detailGeneration) break;
       if (details.has(id)) continue;
-      const asset = assets.get(id); if (!asset) continue;
+      const asset = assets.get(id); if (!asset || asset.previewPending) continue;
       const preview = await makePreview(asset.original, edge);
       if (generation !== detailGeneration || !assets.has(id)) break;
       details.set(id, { url: URL.createObjectURL(preview.preview), edge }); bindAssets(root);
@@ -248,4 +254,52 @@ export async function readAssetSvg(file: Blob): Promise<string> {
     output.push(pending); return output.join('');
   } catch (e) { created.forEach(forgetAsset); throw e; }
   finally { reader.releaseLock(); }
+}
+
+// Inert import normalization also covers legacy sessions, pasted SVG and small
+// highly-compressed images. No original URL is attached to the live canvas.
+const previewQueue = new Set<string>();
+let previewWorking = false;
+const emptyPreview = new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aA1cAAAAASUVORK5CYII='), c => c.charCodeAt(0))], { type: 'image/png' });
+export function adoptEmbeddedRaster(el: Element): void {
+  if (el.localName !== 'image') return;
+  const existing = el.getAttribute(ASSET_ATTR);
+  if (existing && assets.has(existing)) return;
+  const href = el.getAttribute('href') || el.getAttributeNS(XLINK, 'href') || '';
+  const comma = href.indexOf(','); const header = href.slice(0, comma).toLowerCase();
+  if (!header.startsWith('data:') || !header.endsWith(';base64') || header.includes('image/svg')) return;
+  let mime = header.slice(5).split(';')[0];
+  if (mime && mime !== 'application/octet-stream' && !/^image\/(png|jpe?g|webp|gif|bmp|avif)$/.test(mime)) return;
+  try {
+    const header = href.slice(comma + 1, comma + 1 + 65536).replace(/\s/g, '');
+    const prefix = atob(header.slice(0, header.length - header.length % 4));
+    const bytes = Uint8Array.from(prefix, c => c.charCodeAt(0));
+    const size = dimensionsFromBytes(bytes);
+    if (href.length < 256 * 1024 && size && size.width * size.height <= 512 * 512) return;
+    if (!mime || mime === 'application/octet-stream') mime = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : bytes[0] === 0x89 && bytes[1] === 0x50 ? 'image/png' : '';
+    if (!mime) return;
+    const payload = href.slice(comma + 1).replace(/\s/g, '');
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    for (let i = 0; i < payload.length; i += 65536) parts.push(Uint8Array.from(atob(payload.slice(i, i + 65536)), c => c.charCodeAt(0)));
+    const id = crypto.randomUUID();
+    restoreAssets([{ id, original: new Blob(parts, { type: mime }), preview: emptyPreview,
+      width: size?.width ?? 0, height: size?.height ?? 0, previewPending: true }]);
+    el.setAttribute(ASSET_ATTR, id); el.removeAttribute('href'); el.removeAttributeNS(XLINK, 'href');
+  } catch { /* Invalid image bytes remain subject to normal SVG sanitization. */ }
+}
+async function drainPreviews(): Promise<void> {
+  if (previewWorking) return;
+  previewWorking = true;
+  try {
+    while (previewQueue.size) {
+      const id = previewQueue.values().next().value!; previewQueue.delete(id);
+      const asset = assets.get(id); if (!asset) continue;
+      try {
+        const preview = await makePreview(asset.original);
+        if (assets.get(id) !== asset) continue;
+        URL.revokeObjectURL(asset.url); Object.assign(asset, preview, { previewPending: false, url: URL.createObjectURL(preview.preview) });
+        const canvas = document.getElementById('svg-canvas'); if (canvas) bindAssets(canvas);
+      } catch { /* Preserve original bytes even if preview decoding fails. */ }
+    }
+  } finally { previewWorking = false; }
 }

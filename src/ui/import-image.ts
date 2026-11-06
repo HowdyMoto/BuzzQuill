@@ -1,3 +1,4 @@
+import { assetIds, releasePrepared, collectAssets, dimensions, prepareAsset, assetSnapshot, attachAsset, forgetAsset, adoptEmbeddedRaster, bindAssets } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import type { Point } from '../core/types';
 import { readSvgFile } from '../core/file-access';
@@ -46,7 +47,8 @@ export async function importAnyFile(state: AppState, file: File, at?: Point): Pr
     return;
   }
   const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
-  if (!isSvg) { importImageFile(state, file, at); return; }
+  if (!isSvg) { await importRasterBlob(state, file, at); return; }
+  const generation = state.documentGeneration;
 
   const text = await readSvgFile(file);
   // APPEND, never replace: this is the File ▸ Append / drag-onto-canvas path, and
@@ -54,6 +56,7 @@ export async function importAnyFile(state: AppState, file: File, at?: Point): Pr
   // silent data-loss bug here).
   const name = frameNameForFile(file.name);
   const append = () => {
+    if (generation !== state.documentGeneration) { releasePrepared(assetIds(text)); collectAssets(); return; }
     if (!state.appendSVGContent(text, name, at)) showToast(`Nothing to import from “${file.name}”.`);
   };
   if (text.length < 1_000_000) append();
@@ -65,9 +68,7 @@ export async function importAnyFile(state: AppState, file: File, at?: Point): Pr
 
 /** Read a File and embed it as an <image>. */
 export function importImageFile(state: AppState, file: File, at?: Point): void {
-  const reader = new FileReader();
-  reader.onload = () => placeImageDataUrl(state, reader.result as string, at);
-  reader.readAsDataURL(file);
+  void importRasterBlob(state, file, at).catch(err => showToast(`Could not import image: ${errText(err)}`));
 }
 
 /** "Append as New Frame": import a file into a brand-new frame sized to the
@@ -101,10 +102,7 @@ async function importFileAsFrame(state: AppState, file: File): Promise<void> {
     await promptAndImportPdf(state, file); // already one page-sized frame per page
     return;
   }
-  const reader = new FileReader();
-  reader.onload = () => placeImageAsNewFrame(state, reader.result as string, frameNameForFile(file.name));
-  reader.onerror = () => showToast('Could not read that file.');
-  reader.readAsDataURL(file);
+  await importRasterBlob(state, file, undefined, frameNameForFile(file.name));
 }
 
 /** File name without its extension, as the frame's name (falls back to "Frame"). */
@@ -141,8 +139,10 @@ export function placeImageAsNewFrame(state: AppState, dataUrl: string, name: str
 
 /** Embed a data: URL as a centered <image> shape on the active artboard. */
 export function placeImageDataUrl(state: AppState, dataUrl: string, at?: Point): void {
+  const generation = state.documentGeneration;
   const probe = new Image();
   probe.onload = () => {
+    if (generation !== state.documentGeneration) return;
     const el = document.createElementNS(NS, 'image') as SVGImageElement;
     const id = state.nextId();
     el.id = id;
@@ -202,10 +202,48 @@ export function placeImageAt(state: AppState, dataUrl: string, x: number, y: num
   el.setAttribute('width', String(w));
   el.setAttribute('height', String(h));
   el.setAttribute('href', dataUrl);
+  adoptEmbeddedRaster(el); bindAssets(el);
   el.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   state.addShape({
     id, type: 'image', element: el, name,
     style: { fill: 'none', stroke: 'none', strokeWidth: 0, opacity: 1 },
     visible: true, locked: false,
   });
+}
+
+/** Shared bounded-memory ingress for files, drops and raster clipboard bytes. */
+export async function importRasterBlob(state: AppState, blob: Blob, at?: Point, frameName?: string): Promise<void> {
+  const generation = state.documentGeneration;
+  const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/avif': 'avif' } as Record<string, string>)[blob.type] ?? 'png';
+  const file = blob instanceof File ? blob : new File([blob], `pasted.${ext}`, { type: blob.type });
+  let id: string;
+  try { id = await prepareAsset(file); }
+  catch (error) {
+    // Some tiny clipboard PNGs display in HTMLImageElement but fail the stricter bitmap decoder.
+    const size = await dimensions(file);
+    if (frameName || file.size > 256 * 1024 || !size || size.width * size.height > 512 * 512) throw error;
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file);
+    });
+    if (generation === state.documentGeneration) placeImageDataUrl(state, data, at);
+    return;
+  }
+  if (generation !== state.documentGeneration) { forgetAsset(id); return; }
+  const asset = assetSnapshot([`data-bq-raster="${id}"`])[0];
+  let w = asset.width, h = asset.height, x: number, y: number;
+  let frameId: string | undefined;
+  if (frameName) {
+    const edge = framesRightEdge(state); x = edge > 0 ? edge + 40 : 0; y = 0;
+    frameId = state.addFrame(x, y, w, h, frameName);
+  } else {
+    const ab = state.getActiveArtboard(); const scale = Math.min(1, ab.width * .9 / w, ab.height * .9 / h);
+    w *= scale; h *= scale; x = (at?.x ?? ab.x + ab.width / 2) - w / 2; y = (at?.y ?? ab.y + ab.height / 2) - h / 2;
+  }
+  const el = document.createElementNS(NS, 'image'); const shapeId = state.nextId();
+  el.id = shapeId; const name = `image ${shapeId.replace('shape-', '#')}`; el.setAttribute('data-name', name);
+  for (const [key, value] of Object.entries({ x, y, width: w, height: h })) el.setAttribute(key, String(value));
+  attachAsset(el, id); el.setAttribute('preserveAspectRatio', 'xMidYMid meet'); state.requestTool?.('select');
+  state.addShape({ id: shapeId, type: 'image', element: el, name,
+    style: { fill: 'none', stroke: 'none', strokeWidth: 0, opacity: 1 }, visible: true, locked: false }, at);
+  if (frameId) { state.selectShape(frameId); state.revealShape(frameId); }
 }
