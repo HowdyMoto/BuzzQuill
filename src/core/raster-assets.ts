@@ -1,3 +1,4 @@
+import { detailEvictions } from './raster-detail-budget';
 /** Image bytes live once, outside editable SVG/history. Only previews enter the live DOM. */
 export const ASSET_ATTR = 'data-bq-raster';
 export interface RasterAsset { id: string; original: Blob; preview: Blob; width: number; height: number; previewPending?: boolean; }
@@ -29,7 +30,7 @@ export function collectAssets(): void {
   const retained = new Set<string>([...pins.keys(), ...preparing]);
   for (const get of roots) for (const text of get()) for (const id of assetIds(text)) retained.add(id);
   for (const el of document.querySelectorAll(`[${ASSET_ATTR}]`)) retained.add(el.getAttribute(ASSET_ATTR)!);
-  for (const [id, a] of assets) if (!retained.has(id)) { URL.revokeObjectURL(a.url); const d = details.get(id); if (d) URL.revokeObjectURL(d.url); details.delete(id); assets.delete(id); }
+  for (const [id, a] of assets) if (!retained.has(id)) { URL.revokeObjectURL(a.url); discardDetails(id); assets.delete(id); }
 }
 export function pinAssets(markup: string): () => void {
   const ids = [...new Set(assetIds(markup))];
@@ -38,7 +39,7 @@ export function pinAssets(markup: string): () => void {
 }
 export function forgetAsset(id: string): void {
   preparing.delete(id);
-  const a = assets.get(id); if (a) URL.revokeObjectURL(a.url); const d = details.get(id); if (d) URL.revokeObjectURL(d.url); details.delete(id); assets.delete(id);
+  const a = assets.get(id); if (a) URL.revokeObjectURL(a.url); discardDetails(id); assets.delete(id);
 }
 export function bindAssets(root: Element): void {
   const images = [...root.querySelectorAll(`image[${ASSET_ATTR}]`)];
@@ -47,7 +48,8 @@ export function bindAssets(root: Element): void {
     const a = assets.get(el.getAttribute(ASSET_ATTR)!);
     if (el.isConnected && a) preparing.delete(a.id);
     if (!a) continue;
-    const url = details.get(a.id)?.url ?? a.url;
+    const detail = details.get(el);
+    const url = detail?.id === a.id ? detail.url : a.url;
     if (el.getAttribute('href') !== url) el.setAttribute('href', url);
     el.removeAttributeNS(XLINK, 'href');
   }
@@ -56,10 +58,10 @@ export function attachAsset(el: Element, id: string): void {
   preparing.delete(id);
   el.setAttribute(ASSET_ATTR, id); el.removeAttribute('data-bq-image-href'); bindAssets(el);
 }
-export async function dimensions(file: Blob): Promise<{ width: number; height: number } | null> {
+export async function dimensions(file: Blob): Promise<{ width: number; height: number; orientation?: number } | null> {
   return dimensionsFromBytes(new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer()));
 }
-function dimensionsFromBytes(b: Uint8Array): { width: number; height: number } | null {
+function dimensionsFromBytes(b: Uint8Array): { width: number; height: number; orientation?: number } | null {
   const view = new DataView(b.buffer);
   if (b.length >= 10 && b[0] === 71 && b[1] === 73 && b[2] === 70) return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
   if (b.length >= 24 && view.getUint32(0) === 0x89504e47) return { width: view.getUint32(16), height: view.getUint32(20) };
@@ -84,8 +86,8 @@ function dimensionsFromBytes(b: Uint8Array): { width: number; height: number } |
       }
       if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker))
         return orientation >= 5 && orientation <= 8
-          ? { width: view.getUint16(i + 3), height: view.getUint16(i + 5) }
-          : { width: view.getUint16(i + 5), height: view.getUint16(i + 3) };
+          ? { width: view.getUint16(i + 3), height: view.getUint16(i + 5), orientation }
+          : { width: view.getUint16(i + 5), height: view.getUint16(i + 3), orientation };
       if (length < 2) break; i += length;
     }
   }
@@ -160,49 +162,132 @@ export async function portableSvg(markup: string, previews = false): Promise<Blo
   parts.push(markup.slice(offset)); return new Blob(parts, { type: 'image/svg+xml' });
 }
 export function assetStats() {
-  return { count: assets.size, originalBytes: [...assets.values()].reduce((n, a) => n + a.original.size, 0),
-    previewPixelUpperBound: assets.size * PREVIEW_EDGE * PREVIEW_EDGE + [...details.values()].reduce((n, d) => n + d.edge * d.edge, 0), urls: assets.size + details.size };
+  return { detailPixels: [...details.values()].reduce((n, d) => n + d.pixels, 0), detailBudget: DETAIL_PIXELS, detailCount: details.size, count: assets.size, originalBytes: [...assets.values()].reduce((n, a) => n + a.original.size, 0),
+    previewPixelUpperBound: assets.size * PREVIEW_EDGE * PREVIEW_EDGE + [...details.values()].reduce((n, d) => n + d.pixels, 0), urls: assets.size + details.size };
 }
 
-/** Sharpen visible tiles after navigation settles, under a separate 32MiB pixel budget. */
-const DETAIL_PIXELS = 8 * 1024 * 1024;
-const details = new Map<string, { url: string; edge: number }>();
+/** Cached detail is per visible image instance, never a full-resolution document-wide bitmap. */
+const DETAIL_PIXELS = 32 * 1024 * 1024;
+interface DetailPlan { id: string; x: number; y: number; w: number; h: number; width: number; height: number; key: string; }
+const details = new Map<Element, { id: string; url: string; key: string; pixels: number }>();
 let detailTimer: number | undefined;
 let detailGeneration = 0;
 let detailWorking = false;
+function discardDetails(id?: string): void {
+  for (const [el, detail] of details) if (!id || detail.id === id) {
+    URL.revokeObjectURL(detail.url); details.delete(el);
+  }
+}
 export function scheduleRasterDetail(): void {
   detailGeneration++;
   window.clearTimeout(detailTimer);
-  detailTimer = window.setTimeout(() => { void refreshDetail(); }, 350);
+  detailTimer = window.setTimeout(() => { void refreshDetail(); }, 180);
+}
+/** Map the viewport through the image's full transform, including aspect-ratio fitting. */
+function detailPlan(el: SVGImageElement, asset: LiveAsset, viewport: DOMRect): DetailPlan | null {
+  if (asset.previewPending || !asset.width || !asset.height) return null;
+  const box = el.getBoundingClientRect();
+  if (box.right <= viewport.left || box.left >= viewport.right || box.bottom <= viewport.top || box.top >= viewport.bottom) return null;
+  const matrix = el.getScreenCTM(); if (!matrix) return null;
+  const w = el.width.baseVal.value, h = el.height.baseVal.value;
+  if (w <= 0 || h <= 0) return null;
+  let sx = w / asset.width, sy = h / asset.height;
+  let x = el.x.baseVal.value, y = el.y.baseVal.value;
+  const fit = el.preserveAspectRatio.baseVal;
+  if (fit.align !== 1) { // SVG_PRESERVEASPECTRATIO_NONE
+    sx = sy = fit.meetOrSlice === 2 ? Math.max(sx, sy) : Math.min(sx, sy);
+    const align = Math.max(0, fit.align - 2);
+    x += (w - asset.width * sx) * (align % 3) / 2;
+    y += (h - asset.height * sy) * Math.floor(align / 3) / 2;
+  }
+  const pixelsToScreen = matrix.translate(x, y).scale(sx, sy);
+  const { a, b, c, d } = pixelsToScreen;
+  const sum = a*a + b*b + c*c + d*d;
+  const density = Math.sqrt((sum + Math.sqrt(Math.max(0, sum*sum - 4*(a*d-b*c)**2))) / 2) * devicePixelRatio;
+  if (!Number.isFinite(density) || density <= 0 || Math.max(asset.width, asset.height) * density <= PREVIEW_EDGE) return null;
+  const inverse = pixelsToScreen.inverse();
+  // A little overscan avoids showing a soft edge during short pans.
+  const corners = [[viewport.left-24, viewport.top-24], [viewport.right+24, viewport.top-24],
+    [viewport.left-24, viewport.bottom+24], [viewport.right+24, viewport.bottom+24]]
+    .map(([px, py]) => new DOMPoint(px, py).matrixTransform(inverse));
+  const left = Math.max(0, Math.floor(Math.min(...corners.map(p => p.x))));
+  const top = Math.max(0, Math.floor(Math.min(...corners.map(p => p.y))));
+  const right = Math.min(asset.width, Math.ceil(Math.max(...corners.map(p => p.x))));
+  const bottom = Math.min(asset.height, Math.ceil(Math.max(...corners.map(p => p.y))));
+  const cw = right-left, ch = bottom-top;
+  if (![left, top, cw, ch].every(Number.isFinite) || cw <= 0 || ch <= 0) return null;
+  // Never enlarge source pixels, and never cap close-up detail at an arbitrary edge length.
+  const width = Math.max(1, Math.ceil(cw * Math.min(1, density)));
+  const height = Math.max(1, Math.ceil(ch * Math.min(1, density)));
+  return { id: asset.id, x: left, y: top, w: cw, h: ch, width, height,
+    key: [asset.id, left, top, cw, ch, width, height].join(':') };
+}
+function dataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(r.error); r.readAsDataURL(blob); });
+}
+async function detailSvg(asset: LiveAsset, plan: DetailPlan): Promise<Blob> {
+  // Decode one source at a time. Browser codecs may transiently decode the whole source;
+  // only the cropped output survives this operation, and its bitmap is always closed.
+  const options: ImageBitmapOptions = { resizeWidth: plan.width, resizeHeight: plan.height, resizeQuality: 'high' };
+  const orientation = (await dimensions(asset.original))?.orientation ?? 1;
+  let bitmap: ImageBitmap;
+  if (orientation !== 1) {
+    // Chromium's Blob crop coordinates are inconsistent for EXIF-rotated JPEGs.
+    // Canvas source rectangles use the displayed orientation; a second bitmap crop does not.
+    bitmap = await createImageBitmap(asset.original);
+  } else bitmap = await createImageBitmap(asset.original, plan.x, plan.y, plan.w, plan.h, options);
+  const canvas = document.createElement('canvas'); canvas.width = plan.width; canvas.height = plan.height;
+  let crop: Blob;
+  try {
+    const context = canvas.getContext('2d')!;
+    if (orientation !== 1) context.drawImage(bitmap, plan.x, plan.y, plan.w, plan.h, 0, 0, plan.width, plan.height);
+    else context.drawImage(bitmap, 0, 0);
+    crop = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image detail failed')), 'image/png'));
+  } finally { bitmap.close(); canvas.width = canvas.height = 0; }
+  const preview = await dataUrl(asset.preview), patch = await dataUrl(crop);
+  const { x, y, w, h } = plan;
+  // Exclude the crop from the base preview: overlapping translucent pixels would darken.
+  const hole = `M0 0H${asset.width}V${asset.height}H0Z M${x} ${y}v${h}h${w}v${-h}Z`;
+  return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${asset.width}" height="${asset.height}" viewBox="0 0 ${asset.width} ${asset.height}"><defs><clipPath id="outside"><path d="${hole}" clip-rule="evenodd"/></clipPath></defs><image width="${asset.width}" height="${asset.height}" preserveAspectRatio="none" href="${preview}" clip-path="url(#outside)"/><image x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none" href="${patch}"/></svg>`], { type: 'image/svg+xml' });
 }
 async function refreshDetail(): Promise<void> {
-  if (detailWorking) { scheduleRasterDetail(); return; }
+  if (detailWorking) { detailTimer = window.setTimeout(() => { void refreshDetail(); }, 180); return; }
   const root = document.getElementById('drawing-layer'); if (!root) return;
-  const wanted = new Map<string, number>();
   const viewport = document.getElementById('canvas-area')!.getBoundingClientRect();
-  for (const el of root.querySelectorAll(`image[${ASSET_ATTR}]`)) {
-    const rect = el.getBoundingClientRect();
-    if (rect.right < viewport.left || rect.left > viewport.right || rect.bottom < viewport.top || rect.top > viewport.bottom) continue;
-    const id = el.getAttribute(ASSET_ATTR)!;
-    const edge = Math.min(2048, Math.max(512, 2 ** Math.ceil(Math.log2(Math.max(rect.width, rect.height) * Math.min(devicePixelRatio, 2)))));
-    if (edge > 512) wanted.set(id, Math.max(wanted.get(id) ?? 0, edge));
+  const wanted = new Map<Element, DetailPlan>(); let remaining = DETAIL_PIXELS;
+  for (const el of root.querySelectorAll<SVGImageElement>(`image[${ASSET_ATTR}]`)) {
+    const asset = assets.get(el.getAttribute(ASSET_ATTR)!); if (!asset) continue;
+    const plan = detailPlan(el, asset, viewport); if (!plan) continue;
+    const pixels = plan.width * plan.height;
+    if (pixels > remaining) continue;
+    remaining -= pixels; wanted.set(el, plan);
   }
-  let remaining = DETAIL_PIXELS;
-  for (const [id, edge] of wanted) { if (edge * edge > remaining) wanted.delete(id); else remaining -= edge * edge; }
-  for (const [id, d] of details) if (wanted.get(id) !== d.edge) { URL.revokeObjectURL(d.url); details.delete(id); }
+  for (const [el, detail] of details) if (!wanted.has(el) || wanted.get(el)!.id !== detail.id) {
+    URL.revokeObjectURL(detail.url); details.delete(el);
+  }
   bindAssets(root);
   const generation = detailGeneration; detailWorking = true;
   try {
-    for (const [id, edge] of wanted) {
+    for (const [el, plan] of wanted) {
       if (generation !== detailGeneration) break;
-      if (details.has(id)) continue;
-      const asset = assets.get(id); if (!asset || asset.previewPending) continue;
-      const preview = await makePreview(asset.original, edge);
-      if (generation !== detailGeneration || !assets.has(id)) break;
-      details.set(id, { url: URL.createObjectURL(preview.preview), edge }); bindAssets(root);
+      if (details.get(el)?.key === plan.key) continue;
+      const asset = assets.get(plan.id); if (!asset) continue;
+      const evictions = detailEvictions([...details].map(([key, detail]) => ({ key, pixels: detail.pixels,
+        stale: wanted.get(key)?.key !== detail.key })), plan.width * plan.height, DETAIL_PIXELS);
+      if (!evictions) continue;
+      for (const key of evictions) {
+        const detail = details.get(key)!; details.delete(key); bindAssets(key); URL.revokeObjectURL(detail.url);
+      }
+      try {
+        const blob = await detailSvg(asset, plan);
+        if (generation !== detailGeneration || !el.isConnected || assets.get(plan.id) !== asset) break;
+        const previous = details.get(el);
+        details.set(el, { id: plan.id, url: URL.createObjectURL(blob), key: plan.key, pixels: plan.width * plan.height });
+        bindAssets(el);
+        if (previous) URL.revokeObjectURL(previous.url);
+      } catch { /* The base preview remains available if the source cannot decode. */ }
     }
-  } catch { /* Base previews remain usable when a detail decode fails. */ }
-  finally { detailWorking = false; }
+  } finally { detailWorking = false; }
 }
 export function originalAsset(el: Element): Blob | undefined { return assets.get(el.getAttribute(ASSET_ATTR) ?? '')?.original; }
 
@@ -299,6 +384,7 @@ async function drainPreviews(): Promise<void> {
         if (assets.get(id) !== asset) continue;
         URL.revokeObjectURL(asset.url); Object.assign(asset, preview, { previewPending: false, url: URL.createObjectURL(preview.preview) });
         const canvas = document.getElementById('svg-canvas'); if (canvas) bindAssets(canvas);
+        scheduleRasterDetail();
       } catch { /* Preserve original bytes even if preview decoding fails. */ }
     }
   } finally { previewWorking = false; }

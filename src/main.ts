@@ -531,6 +531,7 @@ document.getElementById('tb-default')?.addEventListener('click', () => runComman
 // Frame rulers re-render on view change (their tick spacing & labels are sized in
 // screen units, so they must refresh when the zoom changes).
 canvas.setOnViewChange(() => {
+  scheduleRasterDetail();
   activeTool.onViewChange?.();
   renderFrames(state, svgCanvas, canvas.getZoom()); // keep frame name/dimension labels a constant on-screen size while zooming
   renderFrameGuides(state, svgCanvas, canvas.getZoom());
