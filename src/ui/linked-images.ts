@@ -1,3 +1,4 @@
+import { prepareAsset, attachAsset, forgetAsset } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import { LINKED_IMAGE_ATTR, linkedImages, matchLinkedImages, embedImage, applyEmbeddedImage, type ImageMatch } from '../core/linked-images';
 import { createButton, createSelect } from './components';
@@ -42,7 +43,7 @@ export function setupLinkedImages(state: AppState, owner: () => string): void {
     const qualityLabel = document.createElement('label'); qualityLabel.textContent = 'Image quality'; qualityLabel.htmlFor = 'linked-image-quality';
     const select = createSelect([{ value: 'lighter', label: 'Smaller images — up to 1,024 px' }, { value: 'original', label: 'Full resolution' }]); select.id = 'linked-image-quality';
     const qualityNote = document.createElement('p'); qualityNote.className = 'linked-images-note'; qualityNote.id = 'linked-image-quality-note'; select.setAttribute('aria-describedby', qualityNote.id);
-    const qualityCopy = () => { qualityNote.textContent = select.value === 'lighter' ? 'Limits each image’s longest edge to 1,024 px for easier editing. Original files stay unchanged.' : 'Keeps full resolution. Large image sets may take longer to open and save.'; };
+    const qualityCopy = () => { qualityNote.textContent = select.value === 'lighter' ? 'Limits each image’s longest edge to 1,024 px for easier editing. Original files stay unchanged.' : 'Keeps every original pixel for saving and export. Uses smaller previews while editing.'; };
     select.addEventListener('change', qualityCopy); qualityCopy(); quality.append(qualityLabel, select, qualityNote);
     const progress = document.createElement('progress'); progress.hidden = true; progress.setAttribute('aria-label', 'Adding linked images');
     const input = document.createElement('input'); input.type = 'file'; input.multiple = true; input.setAttribute('webkitdirectory', ''); input.hidden = true;
@@ -74,21 +75,28 @@ export function setupLinkedImages(state: AppState, owner: () => string): void {
       progress.hidden = false;
       const found = matches.filter(m => m.file); progress.max = found.length;
       const data = new Map<File, string>(); const prepared: { match: ImageMatch; data: string }[] = []; const failed: string[] = [];
+      const discard = () => { for (const value of data.values()) if (!value.startsWith('data:')) forgetAsset(value); };
       for (const [i, match] of found.entries()) {
-        if (!current()) { close(); return; }
+        if (!current()) { discard(); close(); return; }
         status.textContent = `Adding images · ${i + 1} of ${found.length}`; progress.value = i;
         // Yield before each decode so progress/cancel remain responsive.
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        if (!current()) { close(); return; }
+        if (!current()) { discard(); close(); return; }
         try {
           const file = match.file!;
-          if (!data.has(file)) data.set(file, await embedImage(file, !quality.hidden && select.value === 'lighter'));
+          if (!data.has(file)) {
+            const full = quality.hidden || select.value === 'original';
+            data.set(file, full ? await prepareAsset(file) : await embedImage(file, !quality.hidden && select.value === 'lighter'));
+          }
           prepared.push({ match, data: data.get(file)! });
         } catch { failed.push(match.reference); }
       }
-      if (!current()) { close(); return; }
+      if (!current()) { discard(); close(); return; }
       // Publish once, to the captured live elements only. Cancel never leaves half a repair.
-      for (const entry of prepared) applyEmbeddedImage(entry.match, entry.data);
+      for (const entry of prepared) {
+        if (entry.data.startsWith('data:')) applyEmbeddedImage(entry.match, entry.data);
+        else attachAsset(entry.match.element, entry.data);
+      }
       if (prepared.length) { state.rebuildShapesFromDOM(); state.saveHistory(); state.onChange_public(); }
       if (!prepared.length) {
         busy = false; choose.disabled = false; add.disabled = false; select.disabled = false; progress.hidden = true;

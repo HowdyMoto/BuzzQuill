@@ -1,3 +1,4 @@
+import { compactAssets, portableSvg, pinAssets, releasePrepared, assetIds } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import type { Artboard, ShapeStyle } from '../core/types';
 import type { FilePickerType } from '../core/file-access';
@@ -148,11 +149,11 @@ export function serializeDocumentSVG(state: AppState): string {
   const b = unionArtboardBounds(state);
   const metaJson = escapeHtml(JSON.stringify(buildMeta(state)));
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return compactAssets(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" ${SVG_NS_DECLS}${state.getExtraNamespaceDecls()} viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="${b.w}" height="${b.h}">
 <metadata class="svgmaker-state">${metaJson}</metadata>
 ${state.getDefsBlock()}<g class="svgmaker-doc">${state.getDrawingLayerSVG()}</g>
-</svg>`;
+</svg>`);
 }
 
 /**
@@ -165,13 +166,13 @@ ${state.getDefsBlock()}<g class="svgmaker-doc">${state.getDrawingLayerSVG()}</g>
  * document-wide, but our loader only imports `<defs>` + the drawing group, so it's
  * ignored on reopen (no round-trip accumulation). Re-derived fresh on every save.
  */
-export async function serializeDocumentSVGForSave(state: AppState, base = serializeDocumentSVG(state)): Promise<{ svg: string; warnings: string[] }> {
+export async function serializeDocumentSVGForSave(state: AppState, base = serializeDocumentSVG(state)): Promise<{ svg: string | Blob; warnings: string[] }> {
   const markup = state.getDrawingLayerSVG();
   const docFaces = embeddedFontFaceStyle(state.embeddedFonts, markup); // e.g. PDF-import fonts
   const bundled = await buildEmbeddedFontStyle(markup);                 // bundled families in use
   const style = [docFaces, bundled.style].filter(Boolean).join('\n');
   const svg = style ? base.replace('</metadata>', `</metadata>\n${style}`) : base;
-  return { svg, warnings: bundled.warnings };
+  return { svg: svg.includes('data-bq-raster=') ? await portableSvg(svg) : svg, warnings: bundled.warnings };
 }
 
 /** Snapshot content and its owner together, before any asynchronous interaction. */
@@ -184,7 +185,8 @@ export function beginDocumentSave(state: AppState) {
   }
   // Attach rejection handling immediately: a picker/sign-in may stay open while
   // font preparation finishes. The caller awaits this result before writing.
-  const content = serializeDocumentSVGForSave(state, snapshot).then(
+  const unpin = pinAssets(snapshot);
+  const content = serializeDocumentSVGForSave(state, snapshot).finally(unpin).then(
     value => ({ value, error: null }),
     (error: unknown) => ({ value: null, error }),
   );
@@ -215,12 +217,14 @@ function applyShapeMeta(state: AppState, shapes: SerializedShape[]): void {
 
 /** Load a document from an SVG string (ours, with metadata, or a foreign SVG). */
 export function loadDocumentSVG(state: AppState, svgString: string): void {
+  releasePrepared(assetIds(svgString));
   const doc = new DOMParser().parseFromString(ensureSvgNamespaces(svgString), 'image/svg+xml');
   const svgEl = doc.querySelector('svg');
   if (!svgEl) throw new Error('File is not a valid SVG.');
 
   // A point edit left open would point at a shape in the document being replaced.
   state.exitPathEdit();
+  state.importHistory({ entries: [], index: -1, savedIndex: 0 });
 
   // Look for our embedded editor metadata.
   let meta: DocMeta | null = null;

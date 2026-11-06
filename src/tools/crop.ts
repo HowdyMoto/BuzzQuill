@@ -1,3 +1,4 @@
+import { ASSET_ATTR } from '../core/raster-assets';
 import { tokens } from '../ui/tokens';
 import { BaseTool } from './base';
 import type { Point } from '../core/types';
@@ -39,7 +40,7 @@ export function isCropped(el: SVGElement): boolean {
  *  to flatten a rotated image onto its bounding box. */
 const GEOMETRY_ATTRS = new Set([
   'x', 'y', 'width', 'height', 'viewBox', 'data-crop', 'overflow',
-  'preserveAspectRatio', 'href', 'xlink:href',
+  'preserveAspectRatio', 'href', 'xlink:href', ASSET_ATTR,
 ]);
 
 /** Copy every non-geometry attribute from `from` to `to` (id included). */
@@ -72,6 +73,7 @@ export function uncropToImage(el: SVGElement): SVGImageElement | null {
   carryAttrs(el, im);
   im.setAttribute('x', String(box.x)); im.setAttribute('y', String(box.y));
   im.setAttribute('width', String(box.w)); im.setAttribute('height', String(box.h));
+  if (inner.hasAttribute(ASSET_ATTR)) im.setAttribute(ASSET_ATTR, inner.getAttribute(ASSET_ATTR)!);
   im.setAttribute('href', inner.getAttribute('href') ?? inner.getAttribute('xlink:href') ?? '');
   im.setAttribute('preserveAspectRatio', inner.getAttribute('preserveAspectRatio') ?? 'xMidYMid meet');
   return im;
@@ -100,6 +102,7 @@ export class CropTool extends BaseTool {
   private hideStyle: SVGStyleElement | null = null;
   private parentEl: SVGElement | null = null;
   private origEl: SVGElement | null = null;  // the image/svg being cropped (hidden during the session)
+  private rasterId: string | null = null;
   private href = '';
   private preserve = 'xMidYMid meet';
   // Everything is measured in the IMAGE'S OWN space — the one its x/y/w/h are
@@ -135,6 +138,7 @@ export class CropTool extends BaseTool {
 
     this.origEl = el;
     this.parentEl = el.parentNode as SVGElement;
+    this.rasterId = img.getAttribute(ASSET_ATTR);
     this.href = img.getAttribute('href') ?? img.getAttribute('xlink:href') ?? '';
     this.preserve = img.getAttribute('preserveAspectRatio') ?? 'xMidYMid meet';
     // The <image>'s own numbers ARE the working space — no mapping, so nothing
@@ -324,6 +328,7 @@ export class CropTool extends BaseTool {
     im.setAttribute('x', String(img.x)); im.setAttribute('y', String(img.y));
     im.setAttribute('width', String(img.w)); im.setAttribute('height', String(img.h));
     im.setAttribute('href', this.href);
+    if (this.rasterId) im.setAttribute(ASSET_ATTR, this.rasterId);
     im.setAttribute('preserveAspectRatio', this.preserve);
     g.appendChild(im);
 
@@ -447,6 +452,7 @@ export class CropTool extends BaseTool {
     im.setAttribute('x', String(b.x)); im.setAttribute('y', String(b.y));
     im.setAttribute('width', String(b.w)); im.setAttribute('height', String(b.h));
     im.setAttribute('href', this.href);
+    if (this.rasterId) im.setAttribute(ASSET_ATTR, this.rasterId);
     im.setAttribute('preserveAspectRatio', this.preserve);
     return im;
   }
@@ -468,6 +474,7 @@ export class CropTool extends BaseTool {
     im.setAttribute('x', String(img.x)); im.setAttribute('y', String(img.y));
     im.setAttribute('width', String(img.w)); im.setAttribute('height', String(img.h));
     im.setAttribute('href', this.href);
+    if (this.rasterId) im.setAttribute(ASSET_ATTR, this.rasterId);
     im.setAttribute('preserveAspectRatio', this.preserve);
     svg.appendChild(im);
     ensureCropClip(svg); // clip one level down, so a blur/shadow can't undo the crop
