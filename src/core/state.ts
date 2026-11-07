@@ -762,11 +762,10 @@ export class AppState {
   getFrameBackground(id: string): string | null { return this.frameChrome.getBackground(id); }
   setFrameBackground(id: string, color: string | null, record = true): void { this.frameChrome.setBackground(id, color, record); }
 
-  /** Grid-snap parameters for the active frame (origin + per-axis spacing — a
+  /** Grid-snap parameters for the given frame (active frame by default; origin + per-axis spacing — a
    *  divisions grid can have different column/row spacing), or null when no active
-   *  frame has snapping on. Used by the select tool to quantize gestures. */
-  activeGridSnap(): { ox: number; oy: number; sx: number; sy: number } | null {
-    const id = this.activeFrameId;
+   *  frame has snapping on. Used by object and path-point gestures. */
+  activeGridSnap(id = this.activeFrameId): { ox: number; oy: number; sx: number; sy: number } | null {
     if (!id) return null;
     const ab = this.artboards.find(a => a.id === id);
     if (!ab || !ab.grid || !ab.grid.snap) return null;
