@@ -102,6 +102,7 @@ Hand-made SVG fixtures live in `test/fixtures/`. The smoke operation matrix is
 - `src/entry.ts`: boot and desktop gate; lazily loads `src/main.ts`.
 - `src/core/`: SVG document state, geometry, history, document tabs and persistence.
 - `src/tools/`: tools including `frame-tool.ts`, path editing, selection, and `direction.ts` for reversing path direction.
+- `src/ui/properties/`: transform, text, and shape controls behind the `ui/properties.ts` entry point.
 - `src/ui/`: panels, `frame-renderer.ts`, file import/export and Drive workflows.
 - `src/lib/`: optional Google browser integration.
 - `scripts/`: tests, notices, secret checks and clean release preparation.

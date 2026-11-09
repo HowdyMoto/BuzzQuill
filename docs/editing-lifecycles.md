@@ -5,6 +5,7 @@ operation; there is no universal rebuild/history/notify transaction.
 
 | Workflow | Live changes | Completion | Exit behavior |
 | --- | --- | --- | --- |
+| Marquee selection (`tools/marquee-session.ts`) | Update rectangle chrome in drawing-layer coordinates | Mouse-up intersects visible unlocked shapes; frames are transparent, groups are units | Remove rectangle and end session; no document/history mutation |
 | Pointer move (`tools/select.ts`) | Translate gesture targets; update overlays while interactive | `AppState.commitMove` reparents moved shapes and records history; zero-delta moves record nothing | Mouse-up clears gesture state, guides, and interactive mode, then refreshes panels |
 | Keyboard nudge (`tools/nudge-session.ts`) | Resolve movable selection for each press; translate through SelectTool's coordinate-aware helper; synchronize moved frames | First press opens an undo entry; repeats accelerate; the quiet-period timer calls `commitMove` with amendment | Fresh non-repeat presses finalize the preceding run; tool deactivation finalizes the run and clears its HUD timer |
 | Pointer resize (`tools/select.ts`) | Recalculate from geometry captured at gesture start | Bake eligible transforms, rebuild if needed, and save history; never use move reparenting | Mouse-up clears resize snapshots and interactive state |

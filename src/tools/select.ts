@@ -1,7 +1,7 @@
 import { NudgeSession } from './nudge-session';
 import { isContainerEl } from '../core/shape-props';
 import { isLockedEl } from '../core/locks';
-import { createMarqueeRect } from '../ui/overlay-chrome';
+import { MarqueeSession } from './marquee-session';
 import { BaseTool } from './base';
 import type { Point, ShapeData, BBox } from '../core/types';
 import { scalePathData } from '../core/path-model';
@@ -156,10 +156,12 @@ export class SelectTool extends BaseTool {
   private multiOrigBBoxes: Map<string, DOMRect> = new Map();
   private multiCombinedBBox: DOMRect | null = null;
 
-  // Marquee (rubber-band) selection state
-  private marquee = false;
-  private marqueeStart: Point = { x: 0, y: 0 };
-  private marqueeRect: SVGRectElement | null = null;
+  private readonly marqueeSession = new MarqueeSession({
+    svgCanvas: this.svgCanvas,
+    shapes: () => this.state.shapes,
+    selection: () => this.state.selectedShapeIds,
+    selectMultiple: ids => this.state.selectMultiple(ids),
+  });
 
   private get guidesLayer(): SVGGElement {
     if (!this._guidesLayer) {
@@ -471,9 +473,7 @@ export class SelectTool extends BaseTool {
           if (!e.shiftKey) {
             this.state.selectShape(null);
           }
-          this.marquee = true;
-          this.marqueeStart = { ...pt };
-          this.createMarqueeRect(pt);
+          this.marqueeSession.begin(pt);
         }
       }
     }
@@ -481,8 +481,8 @@ export class SelectTool extends BaseTool {
 
   onMouseMove(pt: Point, e: MouseEvent): void {
     // --- Marquee drag ---
-    if (this.marquee) {
-      this.updateMarqueeRect(pt);
+    if (this.marqueeSession.active) {
+      this.marqueeSession.update(pt);
       return;
     }
 
@@ -818,10 +818,8 @@ export class SelectTool extends BaseTool {
 
   onMouseUp(pt: Point, e: MouseEvent): void {
     // --- Finish marquee ---
-    if (this.marquee) {
-      this.finishMarquee(pt, e.shiftKey);
-      this.marquee = false;
-      this.removeMarqueeRect();
+    if (this.marqueeSession.active) {
+      this.marqueeSession.finish(pt, e.shiftKey);
       return;
     }
 
@@ -1203,89 +1201,6 @@ export class SelectTool extends BaseTool {
   }
 
   deactivate(): void { this.nudgeSession.deactivate(); }
-
-  // ---- Marquee helpers ----
-
-  private createMarqueeRect(pt: Point): void {
-    const selLayer = this.svgCanvas.querySelector('#selection-layer') as SVGGElement;
-    if (!selLayer) return;
-    // Shared constant-size chrome (non-scaling stroke + dashes) — see ui/overlay-chrome.
-    const rect = createMarqueeRect();
-    rect.setAttribute('x', String(pt.x));
-    rect.setAttribute('y', String(pt.y));
-    rect.setAttribute('width', '0');
-    rect.setAttribute('height', '0');
-    selLayer.appendChild(rect);
-    this.marqueeRect = rect;
-  }
-
-  private updateMarqueeRect(pt: Point): void {
-    if (!this.marqueeRect) return;
-    const x = Math.min(pt.x, this.marqueeStart.x);
-    const y = Math.min(pt.y, this.marqueeStart.y);
-    const w = Math.abs(pt.x - this.marqueeStart.x);
-    const h = Math.abs(pt.y - this.marqueeStart.y);
-    this.marqueeRect.setAttribute('x', String(x));
-    this.marqueeRect.setAttribute('y', String(y));
-    this.marqueeRect.setAttribute('width', String(w));
-    this.marqueeRect.setAttribute('height', String(h));
-  }
-
-  private removeMarqueeRect(): void {
-    this.marqueeRect?.remove();
-    this.marqueeRect = null;
-  }
-
-  private finishMarquee(pt: Point, additive: boolean): void {
-    const mx = Math.min(pt.x, this.marqueeStart.x);
-    const my = Math.min(pt.y, this.marqueeStart.y);
-    const mw = Math.abs(pt.x - this.marqueeStart.x);
-    const mh = Math.abs(pt.y - this.marqueeStart.y);
-
-    // Minimum drag distance to count as marquee (not accidental click)
-    if (mw < 3 && mh < 3) return;
-
-    // Candidates: frames are transparent containers — a marquee selects the shapes
-    // INSIDE a frame, never the frame itself (else any drag touching the big frame
-    // grabs it and you can't rubber-band its contents). Recurse through frames;
-    // treat everything else (groups/booleans/leaves) as a selectable unit.
-    const collect = (shapes: ShapeData[]): ShapeData[] => {
-      const out: ShapeData[] = [];
-      for (const s of shapes) {
-        if (s.type === 'frame') { if (s.children) out.push(...collect(s.children)); }
-        else out.push(s);
-      }
-      return out;
-    };
-
-    const hitIds: string[] = [];
-    for (const shape of collect(this.state.shapes)) {
-      if (!shape.visible || shape.locked) continue;
-      // World-space bbox (marquee coords are drawing-layer space via screenToSVG),
-      // so it's correct for shapes nested/transformed inside frames.
-      const bb = localBBoxInLayer(this.svgCanvas, shape.element);
-      if (bb && this.rectsIntersect(mx, my, mw, mh, bb.x, bb.y, bb.width, bb.height)) {
-        hitIds.push(shape.id);
-      }
-    }
-
-    if (hitIds.length === 0) return;
-
-    if (additive) {
-      // Shift+marquee: add to existing selection
-      const combined = new Set([...this.state.selectedShapeIds, ...hitIds]);
-      this.state.selectMultiple([...combined]);
-    } else {
-      this.state.selectMultiple(hitIds);
-    }
-  }
-
-  private rectsIntersect(
-    ax: number, ay: number, aw: number, ah: number,
-    bx: number, by: number, bw: number, bh: number,
-  ): boolean {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-  }
 
   // ---- Shape finding ----
 

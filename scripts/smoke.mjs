@@ -3274,7 +3274,7 @@ await page.evaluate(() => { delete window.__rb; });
     'core/width-stroke.ts': 2,     // wrap / release: carryObjectAttrs
     'tools/crop.ts': 1,            // crop commit: carryAttrs (wholesale)
     'ui/image-actions.ts': 1,      // reset crop: uncropToImage (wholesale)
-    'ui/panel-helpers.ts': 2, 'ui/properties.ts': 1, // UI, not artwork
+    'ui/panel-helpers.ts': 2, 'ui/properties/text-controls.ts': 1, // UI, not artwork
   };
   const found = Object.fromEntries(sources
     .map((f) => [f.file, (f.code.match(/\.replaceWith\(|\.replaceChild\(|\.outerHTML\s*=[^=]/g) || []).length])

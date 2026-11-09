@@ -37,6 +37,14 @@ What legitimately **stays** in AppState: the shape model + `rebuildShapesFromDOM
 
 `tools/nudge-session.ts` owns SelectTool's keyboard nudge lifecycle through a narrow `NudgeHost`: acceleration, timers, held-run history amendment, and deactivation/HUD cleanup. SelectTool retains target filtering and coordinate-aware movement. Do not reuse this lifecycle for pointer resize, node editing, or cancellable previews without preserving their different commit contracts; see [editing lifecycles](docs/editing-lifecycles.md).
 
+`tools/marquee-session.ts` owns rubber-band chrome and hit testing through `MarqueeHost`; SelectTool retains pointer routing and the initial selection-clear policy. Frames remain transparent to marquee selection, groups remain selectable units, and selection gestures do not record history.
+
+## Dependency and panel boundaries
+
+`npm run architecture:check` parses TypeScript module dependencies and rejects direct or indirect paths from `core/` to UI, tools, or application wiring. It runs during `npm run build`, including CI. Shared escaping belongs in `core/markup-escape.ts`, including PDF decoding.
+
+`ui/properties.ts` is the compatibility entry point for the Properties panel. Its implementations are grouped in `ui/properties/`: transform controls own coordinate/resize/readout logic; text controls own font/content/path controls; shape controls own fill/radius/node controls and compose the setup/readout calls. `fields.ts` shares mixed-value and focus-preserving field helpers. Keep typed transform commits distinct from live scrub changes and pointer-resize snapshots.
+
 ## Coordinates
 
 - **Screen → world:** `Canvas.screenToSVG()` (`core/canvas.ts`) — the single entry point; every tool feeds pointer coords through it. It's manual viewBox math, not CTM-based.
