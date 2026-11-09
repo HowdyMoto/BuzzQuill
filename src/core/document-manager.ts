@@ -1,10 +1,10 @@
 import { assetRoots, assetSnapshot, restoreAssets } from './raster-assets';
 import type { AppState } from './state';
-import { clearFocusedStyle } from '../ui/style-panel';
 import type { CanvasController, ViewState } from './canvas';
 import type { HistorySnapshot } from './history';
-import { serializeDocumentSVG, loadDocumentSVG, setProjectName, getProjectName, hasDiskCopy, setDiskCopy, type PendingOpen } from '../ui/project-file';
-import { getDocSource, setDocSource, type DocSource } from './doc-source';
+import { serializeDocumentSVG, loadDocumentSVG } from './document-codec';
+import type { PendingOpen } from './pending-open';
+import { getDocSource, adoptSource, getProjectName, setProjectName, hasDiskCopy, type DocSource } from './document-identity';
 import type { Session, SessionTab } from './session-store';
 import { registerSaveOwner, type DocumentSaveTarget } from './document-save';
 
@@ -33,7 +33,7 @@ export interface DocTab {
   restoredDirty?: boolean;
   /** Where this tab's document lives (core/doc-source.ts), per-tab so Save writes
    *  to THIS tab's file, not another tab's. The ACTIVE tab's live value is the
-   *  doc-source singleton; this cache is refreshed only on switch-away. */
+   *  document-identity owner; this cache is refreshed only on switch-away. */
   source: DocSource;
   /** An unwritable copy of this tab's content exists on disk (see hasDiskCopy):
    *  opened without a handle, or saved by download. Travels with the tab like the
@@ -51,7 +51,14 @@ function displayName(title: string): string | null {
   return title === 'Untitled' ? null : title;
 }
 
+/** Presentation hooks supplied by the application shell. */
+export interface DocumentManagerHost {
+  clearFocusedStyle(): void;
+  warn(message: string): void;
+}
+
 export class DocumentManager {
+  private readonly host: DocumentManagerHost;
   tabs: DocTab[] = [];
   activeId: string;
   private counter = 0;
@@ -59,7 +66,8 @@ export class DocumentManager {
   private readonly canvas: CanvasController;
   private readonly onChange: () => void;
 
-  constructor(state: AppState, canvas: CanvasController, onChange: () => void) {
+  constructor(state: AppState, canvas: CanvasController, onChange: () => void, host: DocumentManagerHost) {
+    this.host = host;
     this.state = state;
     this.canvas = canvas;
     this.onChange = onChange;
@@ -120,9 +128,7 @@ export class DocumentManager {
           this.onChange();
         }, 1800);
         if (active) {
-          setDocSource(source);
-          setProjectName(displayName(name));
-          setDiskCopy(diskCopy);
+          adoptSource(source, displayName(name), diskCopy);
           this.state.onChange_public();
         }
         this.onChange();
@@ -269,7 +275,7 @@ export class DocumentManager {
         this.state.importHistory({ entries: [], index: -1, savedIndex: 0 });
         this.state.clearAll(); // fresh blank document (default frame)
       } else {
-        loadDocumentSVG(this.state, t.svg); // rebuilds content + defs, resets history
+        loadDocumentSVG(this.state, t.svg, message => this.host.warn(message)); // rebuilds content + defs, resets history
         if (t.history) this.state.importHistory(t.history);
         if (t.view) this.canvas.setViewState(t.view);
         const sel = t.selection.filter(id => this.state.findShapeById(id));
@@ -277,12 +283,9 @@ export class DocumentManager {
       }
       // Re-tether THIS tab's source (the load above may have changed it). Without
       // this, Save would write here to the previous tab's file — silent
-      // cross-document data loss. The one writer besides project-file's adoptSource.
-      setDocSource(t.source);
-      setDiskCopy(t.diskCopy);
-      // The tab's name is part of its identity — set it inside the batch too, so the
-      // single post-load render shows the right title.
-      setProjectName(displayName(t.title));
+      // cross-document data loss. The one writer besides the open/import adoptSource calls.
+      // Name/source/disk-copy become visible together, still inside the batch.
+      adoptSource(t.source, displayName(t.title), t.diskCopy);
     });
   }
 
@@ -420,7 +423,7 @@ export class DocumentManager {
     this.loadTabIntoState(target); // atomically loads content + identity + display name
     // Asset ids are document-scoped, so a style focused in the outgoing document
     // must not stay open — it would edit whatever asset shares that id here.
-    clearFocusedStyle();
+    this.host.clearFocusedStyle();
     this.onChange();
   }
 
@@ -481,7 +484,7 @@ export class DocumentManager {
     if (this.active.dirty && !this.state.dirty) this.active.restoredDirty = false;
     this.active.dirty = this.state.dirty;
     // NB: the active tab's source is deliberately NOT re-synced here. The live value
-    // is the doc-source singleton, and the tab bar reads THAT for the active tab.
+    // is the document-identity owner, and the tab bar reads THAT for the active tab.
     // Writing it onto the DocTab here would run re-entrantly during loadTabIntoState
     // (loadDocumentSVG → onChange → renderTabBar → refreshActive) and clobber the
     // tab's source before the load finishes re-tethering it — silently dropping a

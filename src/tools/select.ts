@@ -1,6 +1,7 @@
+import { NudgeSession } from './nudge-session';
 import { isContainerEl } from '../core/shape-props';
 import { isLockedEl } from '../core/locks';
-import { createMarqueeRect } from '../ui/overlay-chrome';
+import { MarqueeSession } from './marquee-session';
 import { BaseTool } from './base';
 import type { Point, ShapeData, BBox } from '../core/types';
 import { scalePathData } from '../core/path-model';
@@ -21,16 +22,22 @@ import { showGestureHud, hideGestureHud } from '../ui/gesture-hud';
 import { openFrameRename } from '../ui/frame-renderer';
 import { clearFocusedStyle } from '../ui/style-panel';
 
-// Arrow-key nudge tuning. A held key auto-repeats: every NUDGE_RAMP repeats the
-// step grows by 1×, capped at NUDGE_MAX_MULT× (so it speeds up but tops out).
-// The run commits NUDGE_COMMIT_MS after the last press; the HUD hides NUDGE_HUD_MS after.
-const NUDGE_MAX_MULT = 8;
-const NUDGE_RAMP = 3;
-const NUDGE_COMMIT_MS = 220;
-const NUDGE_HUD_MS = 1000;
-
 export class SelectTool extends BaseTool {
   name = 'select';
+
+  private readonly nudgeSession = new NudgeSession({
+    movableSelection: () => this.state.selectedShapeIds
+      .map(id => this.state.findShapeById(id))
+      .filter((shape): shape is ShapeData => !!shape && !shape.locked),
+    translateElement: (element, dx, dy) => this.translateElement(element, dx, dy),
+    syncFrames: () => this.state.syncFrames(),
+    saveHistory: () => this.state.saveHistory(),
+    commitMove: () => this.state.commitMove(undefined, { amend: true }),
+    setInteractive: on => this.state.setInteractive(on),
+    onChange: () => this.state.onChange_public(),
+    showHud: event => showGestureHud('nudge', event),
+    hideHud: () => hideGestureHud(),
+  });
 
   // Drag-move state
   private dragging = false;
@@ -149,10 +156,12 @@ export class SelectTool extends BaseTool {
   private multiOrigBBoxes: Map<string, DOMRect> = new Map();
   private multiCombinedBBox: DOMRect | null = null;
 
-  // Marquee (rubber-band) selection state
-  private marquee = false;
-  private marqueeStart: Point = { x: 0, y: 0 };
-  private marqueeRect: SVGRectElement | null = null;
+  private readonly marqueeSession = new MarqueeSession({
+    svgCanvas: this.svgCanvas,
+    shapes: () => this.state.shapes,
+    selection: () => this.state.selectedShapeIds,
+    selectMultiple: ids => this.state.selectMultiple(ids),
+  });
 
   private get guidesLayer(): SVGGElement {
     if (!this._guidesLayer) {
@@ -464,9 +473,7 @@ export class SelectTool extends BaseTool {
           if (!e.shiftKey) {
             this.state.selectShape(null);
           }
-          this.marquee = true;
-          this.marqueeStart = { ...pt };
-          this.createMarqueeRect(pt);
+          this.marqueeSession.begin(pt);
         }
       }
     }
@@ -474,8 +481,8 @@ export class SelectTool extends BaseTool {
 
   onMouseMove(pt: Point, e: MouseEvent): void {
     // --- Marquee drag ---
-    if (this.marquee) {
-      this.updateMarqueeRect(pt);
+    if (this.marqueeSession.active) {
+      this.marqueeSession.update(pt);
       return;
     }
 
@@ -811,10 +818,8 @@ export class SelectTool extends BaseTool {
 
   onMouseUp(pt: Point, e: MouseEvent): void {
     // --- Finish marquee ---
-    if (this.marquee) {
-      this.finishMarquee(pt, e.shiftKey);
-      this.marquee = false;
-      this.removeMarqueeRect();
+    if (this.marqueeSession.active) {
+      this.marqueeSession.finish(pt, e.shiftKey);
       return;
     }
 
@@ -1168,7 +1173,7 @@ export class SelectTool extends BaseTool {
       else if (e.key === 'ArrowDown') dy = base;
       else return;
       e.preventDefault();
-      this.nudgeSelection(dx, dy, e);
+      this.nudgeSession.nudge(dx, dy, e);
       return;
     }
 
@@ -1195,163 +1200,7 @@ export class SelectTool extends BaseTool {
     if (!parentId || !this.state.enterGroup(parentId)) this.state.exitGroupIsolation();
   }
 
-  // --- Arrow-key nudge state ---
-  private nudgeRepeat = 0;        // consecutive auto-repeats (drives acceleration)
-  private nudgeRunOpen = false;   // an undo entry exists for the current run
-  private nudgeHeld = false;      // the run included held repeats (needs amend on commit)
-  private nudgeCommitTimer = 0;
-  private nudgeHudTimer = 0;
-
-  /**
-   * Move the selection by a canvas-space delta (keyboard nudge, base dx/dy).
-   * Uses the same rotation/nesting-aware translate as a drag, so it behaves like a
-   * tiny drag. A discrete press is its own undo step; a HELD key auto-repeats,
-   * accelerating (capped) and folding the whole hold into a SINGLE undo step.
-   * Locked shapes are skipped. Shows the gesture-hint HUD.
-   */
-  private nudgeSelection(dx: number, dy: number, e: KeyboardEvent): void {
-    const shapes = this.state.selectedShapeIds
-      .map((id) => this.state.findShapeById(id))
-      .filter((s): s is ShapeData => !!s && !s.locked);
-    if (shapes.length === 0) return;
-
-    if (e.repeat) {
-      // Held key: accelerate, and skip panel rebuilds until the run commits.
-      this.nudgeRepeat++;
-      this.nudgeHeld = true;
-      this.state.setInteractive(true);
-    } else {
-      // Fresh press: close any previous run so each tap is its own undo step.
-      this.commitNudgeRun();
-      this.nudgeRepeat = 0;
-    }
-
-    const mult = Math.min(NUDGE_MAX_MULT, 1 + Math.floor(this.nudgeRepeat / NUDGE_RAMP));
-    for (const s of shapes) this.translateElement(s.element, dx * mult, dy * mult);
-    // A moved frame carries the derived artboards cache — resync it (as a drag does).
-    if (shapes.some((s) => s.type === 'frame')) this.state.syncFrames();
-
-    if (!this.nudgeRunOpen) {
-      this.state.saveHistory(); // first move of this run → one undo entry
-      this.nudgeRunOpen = true;
-    }
-    this.state.onChange_public();
-
-    // Commit the run shortly after movement stops (ends the held-run undo step).
-    clearTimeout(this.nudgeCommitTimer);
-    this.nudgeCommitTimer = window.setTimeout(() => this.commitNudgeRun(), NUDGE_COMMIT_MS);
-
-    // Teaching HUD — auto-hides a beat after nudging stops.
-    showGestureHud('nudge', e);
-    clearTimeout(this.nudgeHudTimer);
-    this.nudgeHudTimer = window.setTimeout(() => hideGestureHud(), NUDGE_HUD_MS);
-  }
-
-  /** Finalize the current nudge run: a nudge is a move like any drag, so it
-   *  commits through the move seam — amending, so the run's movement + any
-   *  reparent stay one undo entry (#222). */
-  private commitNudgeRun(): void {
-    if (!this.nudgeRunOpen) return;
-    this.nudgeRunOpen = false;
-    clearTimeout(this.nudgeCommitTimer);
-    this.state.commitMove(undefined, { amend: true });
-    if (this.nudgeHeld) {
-      this.state.setInteractive(false);
-      this.nudgeHeld = false;
-    }
-    this.state.onChange_public(); // full render — side panels catch up
-  }
-
-  deactivate(): void {
-    // Finalize any in-flight nudge run and clear its HUD so nothing lingers when
-    // the user switches tools mid-nudge.
-    this.commitNudgeRun();
-    clearTimeout(this.nudgeHudTimer);
-    hideGestureHud();
-  }
-
-  // ---- Marquee helpers ----
-
-  private createMarqueeRect(pt: Point): void {
-    const selLayer = this.svgCanvas.querySelector('#selection-layer') as SVGGElement;
-    if (!selLayer) return;
-    // Shared constant-size chrome (non-scaling stroke + dashes) — see ui/overlay-chrome.
-    const rect = createMarqueeRect();
-    rect.setAttribute('x', String(pt.x));
-    rect.setAttribute('y', String(pt.y));
-    rect.setAttribute('width', '0');
-    rect.setAttribute('height', '0');
-    selLayer.appendChild(rect);
-    this.marqueeRect = rect;
-  }
-
-  private updateMarqueeRect(pt: Point): void {
-    if (!this.marqueeRect) return;
-    const x = Math.min(pt.x, this.marqueeStart.x);
-    const y = Math.min(pt.y, this.marqueeStart.y);
-    const w = Math.abs(pt.x - this.marqueeStart.x);
-    const h = Math.abs(pt.y - this.marqueeStart.y);
-    this.marqueeRect.setAttribute('x', String(x));
-    this.marqueeRect.setAttribute('y', String(y));
-    this.marqueeRect.setAttribute('width', String(w));
-    this.marqueeRect.setAttribute('height', String(h));
-  }
-
-  private removeMarqueeRect(): void {
-    this.marqueeRect?.remove();
-    this.marqueeRect = null;
-  }
-
-  private finishMarquee(pt: Point, additive: boolean): void {
-    const mx = Math.min(pt.x, this.marqueeStart.x);
-    const my = Math.min(pt.y, this.marqueeStart.y);
-    const mw = Math.abs(pt.x - this.marqueeStart.x);
-    const mh = Math.abs(pt.y - this.marqueeStart.y);
-
-    // Minimum drag distance to count as marquee (not accidental click)
-    if (mw < 3 && mh < 3) return;
-
-    // Candidates: frames are transparent containers — a marquee selects the shapes
-    // INSIDE a frame, never the frame itself (else any drag touching the big frame
-    // grabs it and you can't rubber-band its contents). Recurse through frames;
-    // treat everything else (groups/booleans/leaves) as a selectable unit.
-    const collect = (shapes: ShapeData[]): ShapeData[] => {
-      const out: ShapeData[] = [];
-      for (const s of shapes) {
-        if (s.type === 'frame') { if (s.children) out.push(...collect(s.children)); }
-        else out.push(s);
-      }
-      return out;
-    };
-
-    const hitIds: string[] = [];
-    for (const shape of collect(this.state.shapes)) {
-      if (!shape.visible || shape.locked) continue;
-      // World-space bbox (marquee coords are drawing-layer space via screenToSVG),
-      // so it's correct for shapes nested/transformed inside frames.
-      const bb = localBBoxInLayer(this.svgCanvas, shape.element);
-      if (bb && this.rectsIntersect(mx, my, mw, mh, bb.x, bb.y, bb.width, bb.height)) {
-        hitIds.push(shape.id);
-      }
-    }
-
-    if (hitIds.length === 0) return;
-
-    if (additive) {
-      // Shift+marquee: add to existing selection
-      const combined = new Set([...this.state.selectedShapeIds, ...hitIds]);
-      this.state.selectMultiple([...combined]);
-    } else {
-      this.state.selectMultiple(hitIds);
-    }
-  }
-
-  private rectsIntersect(
-    ax: number, ay: number, aw: number, ah: number,
-    bx: number, by: number, bw: number, bh: number,
-  ): boolean {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-  }
+  deactivate(): void { this.nudgeSession.deactivate(); }
 
   // ---- Shape finding ----
 

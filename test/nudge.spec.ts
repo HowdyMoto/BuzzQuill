@@ -109,3 +109,60 @@ test('locked shapes are not nudged', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   expect(parseFloat((await rect.getAttribute('x'))!)).toBe(100); // unchanged
 });
+
+test('switching tools settles a held nudge once and clears its timers and HUD', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await boot(page);
+  const before = await page.evaluate(svg => {
+    const state = (window as any).state;
+    state.importSVGContent(svg);
+    state.selectMultiple(['r1']);
+    const entries = state.exportHistory().entries.length;
+    const fire = (repeat: boolean) => window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowRight', repeat, bubbles: true, cancelable: true,
+    }));
+    fire(false);
+    for (let i = 0; i < 12; i++) fire(true);
+    return { entries, x: Number(state.findShapeById('r1').element.getAttribute('x')) };
+  }, RECT);
+  await page.locator('.tool-btn[data-tool="rect"]').click();
+  await page.waitForTimeout(1100); // past both the commit and HUD timers
+  const after = await page.evaluate(() => {
+    const state = (window as any).state;
+    const entries = state.exportHistory().entries.length;
+    const interactive = state.interactive;
+    const tool = state.currentTool;
+    state.undo();
+    const undoX = Number(state.findShapeById('r1').element.getAttribute('x'));
+    state.redo();
+    return { entries, interactive, tool, undoX, redoX: Number(state.findShapeById('r1').element.getAttribute('x')) };
+  });
+  expect(after).toEqual({ entries: before.entries + 1, interactive: false, tool: 'rect', undoX: 100, redoX: before.x });
+  await expect(page.locator('#tool-hint')).not.toHaveClass(/gesturing/);
+  expect(errors).toEqual([]);
+});
+
+test('a delayed nudge commit cannot amend the history entry reached by undo', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await boot(page);
+  const expected = await page.evaluate(svg => {
+    const state = (window as any).state;
+    state.importSVGContent(svg);
+    state.selectMultiple(['r1']);
+    for (const repeat of [false, true, true, true]) window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowRight', repeat, bubbles: true, cancelable: true,
+    }));
+    state.undo();
+    return { history: state.exportHistory(), markup: state.getDrawingLayerSVG() };
+  }, RECT);
+  await page.waitForTimeout(350);
+  const actual = await page.evaluate(() => {
+    const state = (window as any).state;
+    return { history: state.exportHistory(), markup: state.getDrawingLayerSVG(), interactive: state.interactive };
+  });
+  expect(actual).toEqual({ ...expected, interactive: false });
+  expect(errors).toEqual([]);
+});

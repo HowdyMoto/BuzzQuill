@@ -1,4 +1,3 @@
-import { showToast } from '../ui/toast';
 import { assetRoots, portableSvg, compactAssets, bindAssets, assetSnapshot } from './raster-assets';
 import type { ShapeData, ShapeStyle } from './types';
 import { sanitizeSvgElement } from './svg-sanitize';
@@ -71,6 +70,7 @@ export interface ClipboardHost {
   pruneDanglingStyleLinks(): number;
   saveHistory(): void;
   onChange(): void;
+  reportLargeCopy(message: string): void;
 }
 
 /**
@@ -158,7 +158,7 @@ export class ClipboardManager {
     const svgWrapper = `<svg xmlns="http://www.w3.org/2000/svg" data-bq-clip="1">${markup}</svg>`;
     if (svgWrapper.includes('data-bq-raster=')) {
       if (assetSnapshot([svgWrapper]).reduce((n, a) => n + a.original.size, 0) > 48 * 1024 * 1024) {
-        showToast('Copied within BuzzQuill. To transfer this large selection to another app, export it as SVG.', 8000, undefined, 'info');
+        this.host.reportLargeCopy('Copied within BuzzQuill. To transfer this large selection to another app, export it as SVG.');
         return;
       }
       void portableSvg(svgWrapper).then(async blob => {
