@@ -3241,16 +3241,11 @@ await page.evaluate(() => { delete window.__rb; });
   ok ? pass('guard:object-attributes-travel-as-one')
     : fail('guard:object-attributes-travel-as-one', JSON.stringify({ strayBlend, strayCarry, ...r }).slice(0, 900));
 
-  // 1b. WHERE the document lives (core/doc-source.ts) has one writer path. Identity
-  //     used to be two hand-synced singletons (a file handle and a cloud tether), and
-  //     every open/save/import path cleared one and set the other by hand — forget a
-  //     site and ⌘S wrote to the previous document's file. Now project-file's
-  //     adoptSource is the funnel, and the tab swap restores a cached value; a new
-  //     caller fails here until reviewed. DocumentManager also completes a save
-    //     against its captured owning tab (covered by save-ownership/Drive tests).
-  const DOC_SOURCE_WRITERS = { 'core/doc-source.ts': 1, 'ui/project-file.ts': 1, 'core/document-manager.ts': 2 };
+  // Identity is adopted atomically by the open/import workflows and the tab/save
+  // owner. Keep new source-writing callers reviewable (renames don't change source).
+  const DOC_SOURCE_WRITERS = { 'core/document-identity.ts': 1, 'ui/project-file.ts': 4, 'core/document-manager.ts': 2, 'ui/drive.ts': 1 };
   const writers = Object.fromEntries(sources
-    .map((f) => [f.file, (f.code.match(/\bsetDocSource\(/g) ?? []).length])
+    .map((f) => [f.file, (f.code.match(/\badoptSource\(/g) ?? []).length])
     .filter(([, n]) => n > 0));
   const writerDrift = [...new Set([...Object.keys(DOC_SOURCE_WRITERS), ...Object.keys(writers)])]
     .filter((f) => (DOC_SOURCE_WRITERS[f] ?? 0) !== (writers[f] ?? 0))

@@ -1,3 +1,5 @@
+import { createRenderCoordinator } from './ui/render-coordinator';
+import { onDocumentIdentityChange } from './core/document-identity';
 import { isContainerEl } from './core/shape-props';
 import './style.css';
 import { AppState } from './core/state';
@@ -28,20 +30,20 @@ import { renderNodeOverlay } from './ui/node-overlay';
 import { renderMaskGhost } from './ui/mask-ghost';
 import { updateToolHint, setHintCommandRunner } from './ui/tool-hint';
 import { onHintsChange } from './ui/hint-prefs';
-import { setupProperties, updatePropertiesPanel, updateTransformReadout, updateRadiusReadout, syncTextPanelVisibility } from './ui/properties';
-import { setupTextStyles, updateTextStylesUI } from './ui/text-styles';
-import { setupInspector, updateInspector } from './ui/inspector';
-import { setupStrokesPanel, updateStrokesPanel } from './ui/appearance-panel';
-import { setupEffects, updateEffectsPanel } from './ui/effects';
+import { setupProperties } from './ui/properties';
+import { setupTextStyles } from './ui/text-styles';
+import { setupInspector } from './ui/inspector';
+import { setupStrokesPanel } from './ui/appearance-panel';
+import { setupEffects } from './ui/effects';
 import { setupPanelResizers } from './ui/panel-resize';
-import { setupFramePanel, updateFramePanel } from './ui/frame-panel';
-import { setupWidthPanel, updateWidthPanel } from './ui/width-panel';
-import { setupRepeatPanel, updateRepeatPanel } from './ui/repeat-panel';
-import { setupMarkers, updateMarkersPanel } from './ui/markers';
-import { updateLayersPanel, setupLayerButtons, setLinkedSourceOpener, setLinkedSourceUpdater } from './ui/layers';
+import { setupFramePanel } from './ui/frame-panel';
+import { setupWidthPanel } from './ui/width-panel';
+import { setupRepeatPanel } from './ui/repeat-panel';
+import { setupMarkers } from './ui/markers';
+import { setupLayerButtons, setLinkedSourceOpener, setLinkedSourceUpdater } from './ui/layers';
 import { setupLibrary, updateLibrary, revealLibrarySection } from './ui/library-panel';
 import { setPatternLibraryOpener } from './ui/paint-editors';
-import { updateStylePanel } from './ui/style-panel';
+import { clearFocusedStyle, updateStylePanel } from './ui/style-panel';
 import { setupObjectStylesPanel, updateObjectStylesPanel } from './ui/object-styles-panel';
 import { setupMenus } from './ui/menus';
 import { showSelectionContextMenu } from './ui/context-menu';
@@ -51,15 +53,15 @@ import { setupColorPicker } from './ui/color-picker';
 import { setupAlign } from './ui/align';
 import { setupSwatches } from './ui/swatches';
 import { setupTooltips } from './ui/tooltip';
-import { setupPathfinder, updatePathfinderPanel, updatePathfinderPopover } from './ui/pathfinder';
-import { setupPathActions, updatePathActionsPopover } from './ui/path-actions';
+import { setupPathfinder } from './ui/pathfinder';
+import { setupPathActions } from './ui/path-actions';
 import { setupDirectionOverlay, updateDirectionOverlay } from './ui/direction-overlay';
-import { setupImageActions, updateImageActions } from './ui/image-actions';
+import { setupImageActions } from './ui/image-actions';
 import { setupMeasureOverlay } from './ui/measure-overlay';
 import { setupShapePicker } from './ui/shape-picker';
 import { setupParametricHandles, updateParametricHandles } from './ui/parametric-handles';
 import { renderFrames } from './ui/frame-renderer';
-import { updateSymbolsPanel, setupSymbolButtons } from './ui/symbols-panel';
+import { setupSymbolButtons } from './ui/symbols-panel';
 import { openHandle, confirmDiscard, pickDocumentToOpen, pendingFromHandle } from './ui/project-file';
 import { setupRecentFilesMenu } from './ui/recent-files';
 import { setupDrive, openFromDrive } from './ui/drive';
@@ -81,6 +83,9 @@ const drawingLayer = document.getElementById('drawing-layer') as unknown as SVGG
 const selectionLayer = document.getElementById('selection-layer') as unknown as SVGGElement;
 const guidesLayer = document.getElementById('guides-layer') as unknown as SVGGElement;
 
+// Browser title follows the complete identity, including changes made by tab/save workflows.
+onDocumentIdentityChange(({ name }) => { document.title = `${name ?? 'Untitled'} — BuzzQuill`; });
+
 // State & canvas
 const state = new AppState(drawingLayer, onStateChange);
 // Let tools request a tool switch (setTool is a hoisted declaration below). Used
@@ -96,7 +101,9 @@ state.pasteExternal = () => void pasteExternalAsync(state);
 // (reorder, rename, split enter/exit, focus swap) don't touch AppState, so they
 // don't fire onStateChange — the document manager's own callback must refresh both
 // the tab strips and the split-view layout for those.
-const docs = new DocumentManager(state, canvas, () => { renderTabBar(); updateSplitView(); updateDirectionOverlay(); });
+const docs = new DocumentManager(state, canvas, () => { renderTabBar(); updateSplitView(); updateDirectionOverlay(); }, {
+  clearFocusedStyle, warn: showToast,
+});
 
 // Tool registry — one row per tool holds its label + constructor. Typed as
 // Record<ToolName, …> so adding a ToolName is a compile error until it has a row
@@ -180,95 +187,11 @@ function getArtboardsBounds(): { x: number; y: number; w: number; h: number } {
 // which onStateChange begins persisting the session on every settled change.
 let sessionRestored = false;
 
-// During an interactive gesture a 120 Hz pointermove fires onStateChange ~120x/s,
-// and each render below forces layout (getScreenCTM/getBBox) — so mid-gesture we
-// coalesce to at most one render per animation frame. Discrete edits render
-// SYNCHRONOUSLY: the test harness and any caller that inspects the DOM right after
-// an edit must see the result immediately, and a settled edit is not hot. Note the
-// shape geometry itself is mutated synchronously by the tools; only the overlay /
-// panel render is batched here.
-let renderRafId = 0;
-function onStateChange(): void {
-  if (state.interactive) {
-    if (!renderRafId) renderRafId = requestAnimationFrame(() => { renderRafId = 0; renderFrame(); });
-    return;
-  }
-  if (renderRafId) { cancelAnimationFrame(renderRafId); renderRafId = 0; }
-  renderFrame();
-}
-
-function renderFrame(): void {
-  // DEV: assert the frames cache mirrors the DOM (catches "forgot to re-sync" bugs
-  // — deleted-frame-lingers, pasted-frame-not-selectable — the moment they happen).
-  state.devCheckFramesInvariant();
-  state.devCheckStyleLinksInvariant();
-  // DEV: assert the shape model hasn't drifted from the DOM (a mutation that forgot
-  // rebuildShapesFromDOM → stale/unselectable shapes).
-  state.devCheckShapesMatchDOM();
-
-  // Keep emulated inside/outside stroke clips aligned to current geometry.
-  state.refreshStrokeAlignClips();
-  // …and blur/shadow regions, which are absolute and would clip a moved shape.
-  state.refreshEffectRegions();
-
-  // Give stroked text a clean, Figma-style outline (fill over stroke, round joins).
-  state.polishTextStrokes();
-  // Stroked, fill:none text renders via a regenerated glyph-outline path (issue #172).
-  state.refreshTextStrokeOutlines();
-
-  // Re-clone repeat-grid patterns whose source shape changed (fast no-op guard).
-  state.syncRepeats();
-
-  // Canvas overlays must track the pointer every frame.
-  renderFrames(state, svgCanvas, canvas.getZoom());
-  renderFrameGuides(state, svgCanvas, canvas.getZoom());
-  renderMaskGuides(state, svgCanvas, canvas.getZoom());
-  updateSelectionOverlay(state, selectionLayer, canvas.getZoom());
-  updateParametricHandles(state);
-  renderNodeOverlay(state, guidesLayer, canvas.getZoom());
-  renderMaskGhost(state, guidesLayer); // onion-skin the clipped-away part of a selected mask
-  updateDirectionOverlay(); // the flow along paths, while anything is showing it
-  // The strip first (settled renders only — a hint may read the selection's
-  // geometry), then the contextual popovers, which keep clear of the strip's band.
-  // Both before the interactive early-return: the popovers hide themselves mid-gesture.
-  if (!state.interactive) updateToolHint(state);
-  updateContextPopovers();
-
-  // The side panels reflect document *structure*, which doesn't change during a
-  // drag/resize/rotate — skip their (full innerHTML) rebuilds mid-gesture and
-  // let the mouseup do one final full render. Big win on large documents. But
-  // the readouts for values a gesture DOES change stay live: the Transform box
-  // (X/Y/W/H/R) and the corner radius (dragging a rect's corner handle).
-  if (state.interactive) {
-    updateTransformReadout(state);
-    updateRadiusReadout(state);
-    return;
-  }
-
-  updatePropertiesPanel(state);
-  updateStrokesPanel(state);
-  updateEffectsPanel(state);
-  updateFramePanel(state);
-  updateWidthPanel(state);
-  updateRepeatPanel(state);
-  updateMarkersPanel(state);
-  updateLayersPanel(state);
-  updateLibrary(state); // Library tab (assets) — cheap no-op unless the tab is showing
-  updateStylePanel(state); // live editor for the focused library style
-  updateObjectStylesPanel(state); // which library styles the selection uses
-  updateSymbolsPanel(state);
-  updatePathfinderPanel(state);
-  updateInspector(state); // header (name/type) + context-sensitive panel visibility
-  syncTextPanelVisibility(state); // keep the Text panel for multi-stroke text (runs after inspector)
-  updateTextStylesUI(state); // reflect the selection's linked text style + override state
-  renderTabBar(); // keep the active tab's title/dirty current
-  updateSplitView(); // keep the split-view preview's label in step with tab changes
-
-  // Persist the open documents so they're restored on the next load. Gated until
-  // the boot-time restore has run, so an early boot render can't overwrite the
-  // stored session with the blank starting document.
+const renderer = createRenderCoordinator(state, canvas, { svgCanvas, selectionLayer, guidesLayer }, () => {
   if (sessionRestored) scheduleSessionSave(sessionNow);
-}
+});
+
+function onStateChange(): void { renderer.onStateChange(); }
 
 /** The session to persist, built when the write fires — or null while a live
  *  preview holds uncommitted geometry in the document (a reload with the Round
@@ -313,13 +236,7 @@ function setTool(toolName: ToolName): void {
   updateToolHint(state);
 }
 
-/** The contextual popovers (Pathfinder / path actions / image actions) all anchor
- *  to the selection, so they always refresh together. */
-function updateContextPopovers(): void {
-  updatePathfinderPopover(state);
-  updatePathActionsPopover(state);
-  updateImageActions(state);
-}
+function updateContextPopovers(): void { renderer.updateContextPopovers(); }
 
 /** Briefly pop a tool's toolbar icon background — visual feedback on selection. */
 function pulseToolButton(toolName: ToolName): void {

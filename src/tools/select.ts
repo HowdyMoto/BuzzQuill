@@ -1,3 +1,4 @@
+import { NudgeSession } from './nudge-session';
 import { isContainerEl } from '../core/shape-props';
 import { isLockedEl } from '../core/locks';
 import { createMarqueeRect } from '../ui/overlay-chrome';
@@ -21,16 +22,22 @@ import { showGestureHud, hideGestureHud } from '../ui/gesture-hud';
 import { openFrameRename } from '../ui/frame-renderer';
 import { clearFocusedStyle } from '../ui/style-panel';
 
-// Arrow-key nudge tuning. A held key auto-repeats: every NUDGE_RAMP repeats the
-// step grows by 1×, capped at NUDGE_MAX_MULT× (so it speeds up but tops out).
-// The run commits NUDGE_COMMIT_MS after the last press; the HUD hides NUDGE_HUD_MS after.
-const NUDGE_MAX_MULT = 8;
-const NUDGE_RAMP = 3;
-const NUDGE_COMMIT_MS = 220;
-const NUDGE_HUD_MS = 1000;
-
 export class SelectTool extends BaseTool {
   name = 'select';
+
+  private readonly nudgeSession = new NudgeSession({
+    movableSelection: () => this.state.selectedShapeIds
+      .map(id => this.state.findShapeById(id))
+      .filter((shape): shape is ShapeData => !!shape && !shape.locked),
+    translateElement: (element, dx, dy) => this.translateElement(element, dx, dy),
+    syncFrames: () => this.state.syncFrames(),
+    saveHistory: () => this.state.saveHistory(),
+    commitMove: () => this.state.commitMove(undefined, { amend: true }),
+    setInteractive: on => this.state.setInteractive(on),
+    onChange: () => this.state.onChange_public(),
+    showHud: event => showGestureHud('nudge', event),
+    hideHud: () => hideGestureHud(),
+  });
 
   // Drag-move state
   private dragging = false;
@@ -1168,7 +1175,7 @@ export class SelectTool extends BaseTool {
       else if (e.key === 'ArrowDown') dy = base;
       else return;
       e.preventDefault();
-      this.nudgeSelection(dx, dy, e);
+      this.nudgeSession.nudge(dx, dy, e);
       return;
     }
 
@@ -1195,80 +1202,7 @@ export class SelectTool extends BaseTool {
     if (!parentId || !this.state.enterGroup(parentId)) this.state.exitGroupIsolation();
   }
 
-  // --- Arrow-key nudge state ---
-  private nudgeRepeat = 0;        // consecutive auto-repeats (drives acceleration)
-  private nudgeRunOpen = false;   // an undo entry exists for the current run
-  private nudgeHeld = false;      // the run included held repeats (needs amend on commit)
-  private nudgeCommitTimer = 0;
-  private nudgeHudTimer = 0;
-
-  /**
-   * Move the selection by a canvas-space delta (keyboard nudge, base dx/dy).
-   * Uses the same rotation/nesting-aware translate as a drag, so it behaves like a
-   * tiny drag. A discrete press is its own undo step; a HELD key auto-repeats,
-   * accelerating (capped) and folding the whole hold into a SINGLE undo step.
-   * Locked shapes are skipped. Shows the gesture-hint HUD.
-   */
-  private nudgeSelection(dx: number, dy: number, e: KeyboardEvent): void {
-    const shapes = this.state.selectedShapeIds
-      .map((id) => this.state.findShapeById(id))
-      .filter((s): s is ShapeData => !!s && !s.locked);
-    if (shapes.length === 0) return;
-
-    if (e.repeat) {
-      // Held key: accelerate, and skip panel rebuilds until the run commits.
-      this.nudgeRepeat++;
-      this.nudgeHeld = true;
-      this.state.setInteractive(true);
-    } else {
-      // Fresh press: close any previous run so each tap is its own undo step.
-      this.commitNudgeRun();
-      this.nudgeRepeat = 0;
-    }
-
-    const mult = Math.min(NUDGE_MAX_MULT, 1 + Math.floor(this.nudgeRepeat / NUDGE_RAMP));
-    for (const s of shapes) this.translateElement(s.element, dx * mult, dy * mult);
-    // A moved frame carries the derived artboards cache — resync it (as a drag does).
-    if (shapes.some((s) => s.type === 'frame')) this.state.syncFrames();
-
-    if (!this.nudgeRunOpen) {
-      this.state.saveHistory(); // first move of this run → one undo entry
-      this.nudgeRunOpen = true;
-    }
-    this.state.onChange_public();
-
-    // Commit the run shortly after movement stops (ends the held-run undo step).
-    clearTimeout(this.nudgeCommitTimer);
-    this.nudgeCommitTimer = window.setTimeout(() => this.commitNudgeRun(), NUDGE_COMMIT_MS);
-
-    // Teaching HUD — auto-hides a beat after nudging stops.
-    showGestureHud('nudge', e);
-    clearTimeout(this.nudgeHudTimer);
-    this.nudgeHudTimer = window.setTimeout(() => hideGestureHud(), NUDGE_HUD_MS);
-  }
-
-  /** Finalize the current nudge run: a nudge is a move like any drag, so it
-   *  commits through the move seam — amending, so the run's movement + any
-   *  reparent stay one undo entry (#222). */
-  private commitNudgeRun(): void {
-    if (!this.nudgeRunOpen) return;
-    this.nudgeRunOpen = false;
-    clearTimeout(this.nudgeCommitTimer);
-    this.state.commitMove(undefined, { amend: true });
-    if (this.nudgeHeld) {
-      this.state.setInteractive(false);
-      this.nudgeHeld = false;
-    }
-    this.state.onChange_public(); // full render — side panels catch up
-  }
-
-  deactivate(): void {
-    // Finalize any in-flight nudge run and clear its HUD so nothing lingers when
-    // the user switches tools mid-nudge.
-    this.commitNudgeRun();
-    clearTimeout(this.nudgeHudTimer);
-    hideGestureHud();
-  }
+  deactivate(): void { this.nudgeSession.deactivate(); }
 
   // ---- Marquee helpers ----
 
