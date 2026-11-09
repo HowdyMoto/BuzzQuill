@@ -57,6 +57,8 @@ function updateNodeRow(state: AppState): void {
   const active = !!(state.editingPathId && session && session.selected.size > 0);
   row.style.display = active ? '' : 'none';
   if (!active) return;
+  const straighten = document.getElementById('prop-node-straighten') as HTMLButtonElement | null;
+  if (straighten) straighten.disabled = !session!.canStraightenSelectedSegment();
   const type = session!.selectionType();
   for (const mode of ['corner', 'smooth', 'broken']) {
     const button = document.getElementById(`prop-node-${mode}`) as HTMLButtonElement;
@@ -174,6 +176,9 @@ export function updatePropertiesPanel(state: AppState): void {
 }
 export function setupProperties(state: AppState): void {
   setupTextProperties(state);
+  document.getElementById('prop-node-straighten')?.addEventListener('click', () => {
+    if (state.pathEdit?.straightenSelectedSegment()) state.commitPathEdit();
+  });
 
   // Node point-type buttons (visible only while node-editing a path).
   for (const [id, type] of [
