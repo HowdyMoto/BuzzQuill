@@ -3243,7 +3243,7 @@ await page.evaluate(() => { delete window.__rb; });
 
   // Identity is adopted atomically by the open/import workflows and the tab/save
   // owner. Keep new source-writing callers reviewable (renames don't change source).
-  const DOC_SOURCE_WRITERS = { 'core/document-identity.ts': 1, 'ui/project-file.ts': 4, 'core/document-manager.ts': 2, 'ui/drive.ts': 1 };
+  const DOC_SOURCE_WRITERS = { 'core/document-identity.ts': 1, 'ui/project-file.ts': 4, 'core/document-manager.ts': 2, 'ui/drive.ts': 1, 'ui/file-drop.ts': 1 };
   const writers = Object.fromEntries(sources
     .map((f) => [f.file, (f.code.match(/\badoptSource\(/g) ?? []).length])
     .filter(([, n]) => n > 0));

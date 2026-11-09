@@ -1,3 +1,4 @@
+import { POINT_MODES_ATTR, restorePointModes, writePointModes } from './path-point-modes';
 // ---------------------------------------------------------------------------
 // Join (Illustrator's ⌘J): connect the open ends of paths.
 //
@@ -116,8 +117,9 @@ export function nearestEnds(a: SubPath, b: SubPath): { aEnd: End; bEnd: End } {
 }
 
 /** The single open subpath of path data, or null (closed, compound, or empty). */
-function soleOpenSubPath(d: string): SubPath | null {
+function soleOpenSubPath(d: string, modes?: string | null): SubPath | null {
   const m = parsePath(d);
+  restorePointModes(m, modes);
   if (m.subpaths.length !== 1) return null;
   const sp = m.subpaths[0];
   return !sp.closed && sp.anchors.length >= 2 ? sp : null;
@@ -237,7 +239,7 @@ export class PathJoinManager {
       const shape = plan.shape;
       if (shape.type !== 'path' && !this.host.convertShapeToPath(shape)) return false;
       const el = shape.element;
-      const sp = soleOpenSubPath(el.getAttribute('d') ?? '');
+      const sp = soleOpenSubPath(el.getAttribute('d') ?? '', el.getAttribute(POINT_MODES_ATTR));
       const closed = sp && closeSubPath(sp, localTol(el));
       if (!closed) return false;
       this.writePath(el, { subpaths: [closed] });
@@ -259,8 +261,8 @@ export class PathJoinManager {
     const mk = matrixBetween(layer, keep.element as unknown as SVGGraphicsElement);
     const mo = matrixBetween(layer, other.element as unknown as SVGGraphicsElement);
     if (!mk || !mo) return false;
-    const a = soleOpenSubPath(keep.element.getAttribute('d') ?? '');
-    const b = soleOpenSubPath(transformPathData(other.element.getAttribute('d') ?? '', mk.inverse().multiply(mo)));
+    const a = soleOpenSubPath(keep.element.getAttribute('d') ?? '', keep.element.getAttribute(POINT_MODES_ATTR));
+    const b = soleOpenSubPath(transformPathData(other.element.getAttribute('d') ?? '', mk.inverse().multiply(mo)), other.element.getAttribute(POINT_MODES_ATTR));
     if (!a || !b) return false;
     const { aEnd, bEnd } = nearestEnds(a, b);
     this.writePath(keep.element, { subpaths: [joinSubPaths(a, aEnd, b, bEnd, localTol(keep.element))] });
@@ -277,5 +279,6 @@ export class PathJoinManager {
     // regenerate the old shape over it on the next resize.
     dropParametricAttrs(el);
     el.setAttribute('d', serializePath(model));
+    writePointModes(el, model);
   }
 }

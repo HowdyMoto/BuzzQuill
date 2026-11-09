@@ -1,3 +1,4 @@
+import { portableSvg } from '../core/raster-assets';
 // ---------------------------------------------------------------------------
 // Split view — the LAYOUT half of the two-editor-groups feature. The tab model
 // (which tab is in which group, focus, drag-between-panes) lives in
@@ -111,6 +112,11 @@ export function updateSplitView(): void {
   if (gutter) gutter.hidden = !split;
 
   if (split) renderPreview(preview);
+  else {
+    previewGeneration++; previewKey = ''; pendingPreview = null;
+    if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null;
+    preview?.querySelector('.split-preview-body')?.replaceChildren();
+  }
 
   // The live canvas changed width iff split turned on/off or the panes swapped
   // sides — refit its viewBox once the new grid has laid out.
@@ -120,19 +126,40 @@ export function updateSplitView(): void {
 }
 
 /** Draw the non-focused group's document into the preview pane as an isolated <img>. */
+let previewGeneration = 0;
+let previewUrl: string | null = null;
+let previewKey = '';
+let previewWorking = false;
+let pendingPreview: { svg: string; body: HTMLElement; generation: number } | null = null;
 function renderPreview(pane: HTMLElement | null): void {
-  if (!pane) return;
-  const body = pane.querySelector('.split-preview-body') as HTMLElement | null;
+  const body = pane?.querySelector('.split-preview-body') as HTMLElement | null;
   if (!body) return;
   const shownId = docs.shownInGroup(otherGroup());
   const svg = shownId ? docs.tabSvgSnapshot(shownId) : null;
+  const key = `${shownId}:${svg}`;
+  if (key === previewKey) return;
+  previewKey = key; const generation = ++previewGeneration;
+  if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null;
   if (!svg) {
+    pendingPreview = null;
     body.innerHTML = '<div class="split-preview-empty">Empty document — click to start editing</div>';
     return;
   }
-  const img = document.createElement('img');
-  img.alt = '';
-  img.draggable = false;
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  body.replaceChildren(img);
+  pendingPreview = { svg, body, generation };
+  void drainPreview();
+}
+async function drainPreview(): Promise<void> {
+  if (previewWorking) return;
+  previewWorking = true;
+  try {
+    while (pendingPreview) {
+      const job = pendingPreview; pendingPreview = null;
+      const blob = await portableSvg(job.svg, true);
+      if (job.generation !== previewGeneration) continue;
+      const img = document.createElement('img'); img.alt = ''; img.draggable = false;
+      previewUrl = URL.createObjectURL(blob); img.src = previewUrl;
+      job.body.replaceChildren(img);
+    }
+  } catch { previewKey = ''; }
+  finally { previewWorking = false; }
 }

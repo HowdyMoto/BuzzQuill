@@ -1,3 +1,4 @@
+import { restorePointModes } from './path-point-modes';
 /**
  * A live node-editing session for a single path element. Holds the parsed
  * {@link PathModel}, the current anchor selection, and the editing operations
@@ -8,7 +9,7 @@
  * Properties panel (reads/sets type) share one source of truth.
  */
 import {
-  parsePath, serializePath, setAnchorType, insertAnchorAt, deleteAnchor, inferType,
+  parsePath, serializePath, setAnchorType, insertAnchorAt, deleteAnchor,
   reverseSubPath, reversedAnchorIndex,
   type PathModel, type Anchor, type AnchorType,
 } from './path-model';
@@ -26,8 +27,9 @@ export class PathEditSession {
   /** Selected anchors as "sp:i" keys. */
   selected = new Set<string>();
 
-  constructor(d: string) {
+  constructor(d: string, pointModes?: string | null) {
     this.model = parsePath(d);
+    restorePointModes(this.model, pointModes);
   }
 
   commit(): string {
@@ -102,7 +104,7 @@ export class PathEditSession {
 
   /**
    * Drag a control handle to (x, y). For smooth anchors the opposite handle is
-   * mirrored (equal length, opposite direction). Alt breaks the link, demoting
+   * kept collinear (preserving its own length). Alt breaks the link, demoting
    * the anchor to `broken`.
    */
   moveHandle(sp: number, i: number, which: HandleWhich, x: number, y: number, alt = false): void {
@@ -113,7 +115,7 @@ export class PathEditSession {
     if (alt) { a.type = 'broken'; return; }
 
     if (a.type === 'smooth') {
-      // Mirror the opposite handle: same distance, opposite direction.
+      // Keep the opposite handle aligned without changing its length.
       const hx = x - a.x, hy = y - a.y;
       if (which === 'in') {
         if (a.outX !== undefined) {
@@ -130,8 +132,6 @@ export class PathEditSession {
           a.inX = a.x - (hx / m) * inLen; a.inY = a.y - (hy / m) * inLen;
         }
       }
-    } else {
-      a.type = inferType(a);
     }
   }
 

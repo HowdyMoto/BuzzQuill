@@ -1,3 +1,4 @@
+import { checkedInnerHTML, checkedOuterHTML } from './checked-markup';
 // ---------------------------------------------------------------------------
 // SVG import / defs export — round-tripping the document to and from SVG text.
 //
@@ -146,7 +147,7 @@ export class SvgIoManager {
 
   getDefsContent(): string {
     const parts: string[] = [];
-    for (const el of this.host.symbolElements()) parts.push(el.outerHTML);
+    for (const el of this.host.symbolElements()) parts.push(checkedOuterHTML(el));
     const defs = this.host.getDefsElement();
     if (defs) {
       // Export every def the document depends on (gradients, patterns, filters,
@@ -157,7 +158,7 @@ export class SvgIoManager {
       for (const child of Array.from(defs.children)) {
         if (EDITOR_DEF_IDS.has(child.id)) continue;
         if (child.tagName.toLowerCase() === 'symbol') continue;
-        parts.push(child.outerHTML);
+        parts.push(checkedOuterHTML(child));
       }
     }
     return xmlSafeMarkup(parts.join('\n'));
@@ -201,11 +202,11 @@ export class SvgIoManager {
     // document content — strip them so saved files are plain <text stroke=…> (they
     // re-derive on load). Only pay the clone when such a cache is actually present.
     if (!dl.querySelector('[data-text-stroke-cache],[data-text-stroke-outlined]')) {
-      return xmlSafeMarkup(dl.innerHTML);
+      return xmlSafeMarkup(checkedInnerHTML(dl));
     }
     const clone = dl.cloneNode(true) as SVGGElement;
     normalizeTextStrokesForExport(clone);
-    return xmlSafeMarkup(clone.innerHTML);
+    return xmlSafeMarkup(checkedInnerHTML(clone));
   }
 
   /** Like {@link getDrawingLayerSVG} but with live-boolean operands stripped, so
@@ -225,7 +226,7 @@ export class SvgIoManager {
       if (clip?.id) g.setAttribute('clip-path', `url(#${clip.id})`);
     }
     stripHiddenForExport(clone);
-    return xmlSafeMarkup(clone.innerHTML);
+    return xmlSafeMarkup(checkedInnerHTML(clone));
   }
 
   /** Clear all symbols/gradients/patterns and empty the live <defs> (keeping the

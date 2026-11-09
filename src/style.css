@@ -1320,6 +1320,7 @@ body.resizing-col .panel-resizer { pointer-events: auto; }
 .doc-tab .doc-tab-badge.cloud { color: var(--ai-accent); }
 .doc-tab .doc-tab-badge.local { color: var(--ai-text-dim); }
 .doc-tab.active .doc-tab-badge.local { color: var(--ai-text); }
+.doc-tab-dirty-slot { flex: 0 0 6px; width: 6px; display: inline-flex; align-items: center; justify-content: center; }
 .doc-tab .doc-tab-dirty { color: var(--ai-accent); font-size: 14px; line-height: 1; }
 .doc-tab .doc-tab-close {
   border: none; background: transparent; color: inherit; cursor: pointer;
@@ -2350,24 +2351,14 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
   padding-bottom: 12px;
   border-bottom: 1px solid var(--ai-border);
 }
-.fp-export-head { display: flex; align-items: center; gap: 6px; }
-.fp-export-head .appearance-label { margin-right: auto; }
-.fp-export-add {
-  flex: 0 0 auto; width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  border: none; border-radius: 5px; cursor: pointer;
-  background: var(--ai-btn); color: var(--ai-text-dim);
-  font-size: 16px; line-height: 1;
-}
-.fp-export-add:hover { background: var(--ai-accent); color: #fff; }
-
 #fp-export-list { display: flex; flex-direction: column; gap: 4px; }
 /* Each target sits on the same panel-darker surface as its expanded settings card,
    so a row and its opened panel read as one material. Inputs stay plain text until
    hover/focus. */
 .fp-target {
-  display: flex; align-items: center; gap: 3px;
-  height: 30px; padding: 0 8px 0 6px; border-radius: 7px;
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto 18px;
+  align-items: center; gap: 3px;
+  padding: 5px 8px 5px 6px; border-radius: 7px;
 }
 .fp-target:hover { background: var(--ai-highlight); }
 .fp-target-fmt {
@@ -2388,7 +2379,12 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
   border: 1px solid transparent; border-radius: 4px;
   font-size: 12px;
 }
-.fp-target-name { flex: 1 1 auto; }
+/* Filename gets its own line; metadata no longer squeezes it to a tiny prefix. */
+.fp-target-name { grid-row: 1; grid-column: 2 / 4; width: 100%; text-overflow: ellipsis; }
+.fp-target-gear { grid-row: 1; grid-column: 1; }
+.fp-target-x { grid-row: 1; grid-column: 4; }
+.fp-target-fmt { grid-row: 2; grid-column: 2; justify-self: start; }
+.fp-target-size { grid-row: 2; grid-column: 3; justify-self: end; }
 .fp-target-size { flex: 0 0 60px; width: 60px; text-align: center; color: var(--ai-text-dim); }
 .fp-target-name:hover, .fp-target-size:hover { background: var(--ai-input); }
 .fp-target-name:focus, .fp-target-size:focus {
@@ -2415,6 +2411,13 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 .fp-target-wrap.open .fp-target {
   border-bottom: 1px solid var(--ai-border); border-radius: 7px 7px 0 0;
 }
+/* The header owns the filename in both states. Expanded cards make editing explicit. */
+.fp-target-wrap.open .fp-target-name {
+  background: var(--ai-input); border-color: var(--ai-border-light);
+}
+.fp-target-wrap.open .fp-target-name:focus { border-color: var(--ai-accent); }
+.fp-target-wrap.open .fp-target-size { display: none; }
+.fp-target:focus-within .fp-target-x { opacity: 1; }
 .fp-target-wrap.open .fp-target:hover { background: transparent; } /* it's the card header now */
 .fp-target-gear {
   flex: 0 0 auto; width: 16px; height: 18px;
@@ -2433,28 +2436,14 @@ body.ap-reordering, body.ap-reordering * { cursor: grabbing !important; user-sel
 }
 .fp-target-opts[hidden] { display: none; } /* our display:flex would otherwise defeat [hidden] */
 .fp-opt-row { min-height: 22px; height: auto; margin-bottom: 0; }
-.fp-opt-row .appearance-label,
-.fp-opt-stack .appearance-label { font-size: 11px; color: var(--ai-text-dim); white-space: nowrap; }
-.fp-opt-bg { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.fp-opt-sub { font-size: 11px; color: var(--ai-text-dim); }
+.fp-opt-row .appearance-label { font-size: 11px; color: var(--ai-text-dim); white-space: nowrap; }
 .fp-opt-qty { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .fp-opt-qty .fp-opt-num { width: 52px; text-align: center; }
-/* File name: a real editable field that fills the row, with a dim ".ext" suffix. */
-.fp-opt-name-holder { display: flex; align-items: center; gap: 5px; margin-left: 12px; flex: 1 1 auto; min-width: 0; }
-.fp-opt-name {
-  flex: 1 1 auto; min-width: 0; height: 20px; padding: 0 6px;
-  background: var(--ai-input); color: var(--ai-text);
-  border: 1px solid var(--ai-border-light); border-radius: 4px; font-size: 12px;
-}
-.fp-opt-name:focus { outline: none; border-color: var(--ai-accent); }
-.fp-opt-ext { flex: 0 0 auto; }
 .fp-opt-caption { font-size: 10px; color: var(--ai-text-dim); text-align: right; margin-top: -3px; }
 .fp-opt-divider { height: 1px; background: var(--ai-border); margin: 1px 0; }
 .fp-opt-seg { flex: 0 0 auto; display: inline-flex; gap: 2px; width: auto; margin-left: auto; }
-.fp-opt-seg button { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; height: 22px; white-space: nowrap; }
-.fp-opt-stack { display: flex; flex-direction: column; gap: 4px; padding: 0; }
-.fp-opt-seg-full { display: flex; width: 100%; gap: 2px; margin-left: 0; }
-.fp-opt-seg-full button { flex: 1 1 0; padding: 3px 4px; font-size: 11px; height: 23px; white-space: nowrap; }
+.fp-opt-seg.btn-group button { width: auto; flex: 0 0 auto; padding: 2px 5px; font-size: 11px; height: 22px; white-space: nowrap; }
+.fp-opt-select { margin-left: auto; min-width: 0; width: 145px; height: 24px; font-size: 11px; }
 .fp-opt-row .appearance-color-btn { width: 22px; height: 22px; }
 .fp-export-btn {
   margin-top: 8px;
@@ -4285,8 +4274,15 @@ g[data-boolean][data-bool-editing] > [data-bool-result] { opacity: 0.45; }
 .node-direction-pulse {
   /* Animate SVG geometry in its own coordinate space. Transform animations on
      these tiny SVG children can cause raster siblings to flash during compositing. */
-  animation: node-direction-pulse 280ms ease-out both;
+  animation: node-direction-pulse 400ms ease-out both;
 }
+
+@keyframes node-direction-arrow {
+  0% { opacity: 0; }
+  15%, 65% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.node-direction-arrow { animation: node-direction-arrow 900ms ease-out both; }
 
 /* Keyboard focus: a clear accent ring (only shows for keyboard users). */
 button:focus-visible, .tool-btn:focus-visible, .doc-tab:focus-visible,
@@ -4364,6 +4360,9 @@ input.fx-scrubbing {
 
 @media (prefers-reduced-motion: reduce) {
   [data-node-direction-stroke] { opacity: 0 !important; }
+  /* A tiny duration still waits for an animation frame and its backwards fill
+     can hide the controls meanwhile. Reduced motion needs no entrance at all. */
+  .ctx-popover.ctx-enter, .ctx-popover.ctx-enter > * { animation: none !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important; /* a staggered entrance with fill-mode:both would otherwise blink in */
@@ -4656,3 +4655,54 @@ input, select, textarea {
   .save-complete .doc-tab-save-fill { animation: none; transform: scaleX(1); }
   .save-complete .doc-tab-badge, .save-complete .doc-tab-badge::after { animation: none; }
 }
+
+/* Point modes are choices, not the slashed “no paint” appearance toggle. */
+.point-mode-buttons { display: flex; flex: 1; gap: 2px; }
+.point-mode { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
+  border-radius: 3px; background: var(--ai-btn); color: var(--ai-text-dim); font-size: 11px; cursor: pointer; }
+.point-mode:hover { background: var(--ai-highlight); color: var(--ai-text-bright); }
+.point-mode.active { background: var(--ai-accent); color: #fff; }
+.point-mode:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 2px; }
+
+#prop-node-row { flex-wrap: wrap; gap: 6px; }
+.point-mode-hint { flex-basis: 100%; color: var(--ai-text-dim); font-size: 10px; line-height: 1.4; }
+
+/* Stroke caps and endpoint ornaments: previews use the same marker geometry as SVG. */
+.stroke-picker { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1;
+  height: 28px; padding: 0 5px; border: 1px solid var(--ai-border); border-radius: 3px;
+  background: var(--ai-input); color: var(--ai-text); cursor: pointer; font-size: 11px; }
+.stroke-picker-preview { display: flex; min-width: 0; }
+.stroke-picker-preview svg { width: 40px; height: 24px; }
+.stroke-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: left; }
+#prop-markers-row { flex-direction: column; align-items: stretch; gap: 5px; }
+.stroke-end-row { margin: 0; }
+.stroke-picker-menu { position: fixed; z-index: 10000; width: 238px; max-height: calc(100vh - 8px); overflow-y: auto;
+  padding: 4px; border: 1px solid var(--ai-border); border-radius: 6px; background: var(--ai-panel); box-shadow: 0 8px 24px #0005; }
+.stroke-picker-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px;
+  color: var(--ai-text); background: transparent; border: 0; border-radius: 3px; text-align: left; cursor: pointer; font-size: 12px; }
+.stroke-picker-menu button > span:first-child { display: flex; }
+.stroke-picker-check { margin-left: auto; color: var(--ai-accent); }
+.stroke-picker-menu button:hover, .stroke-picker-menu button:focus { background: var(--ai-highlight); outline: none; }
+.stroke-picker:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 2px; }
+
+.linked-images-banner { position: absolute; z-index: 30; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 16px; max-width: calc(100% - 32px); padding: 12px 16px;
+  border: 1px solid var(--ai-border); border-radius: 8px; background: var(--ai-panel); box-shadow: 0 4px 18px #0003; color: var(--ai-text); }
+.linked-images-banner[hidden], .linked-images-quality[hidden] { display: none; }
+.linked-images-banner strong, .linked-images-banner span { display: block; }
+.linked-images-banner strong { font-size: 12px; margin-bottom: 4px; }
+.linked-images-banner span, .linked-images-note { color: var(--ai-text-dim); font-size: 12px; line-height: 1.5; }
+.linked-images-banner button { flex-shrink: 0; }
+.linked-images-dialog { padding: 20px; width: 520px; max-width: calc(100vw - 32px); }
+.linked-images-dialog p { line-height: 1.5; }
+.linked-image-paths { padding-left: 20px; max-height: 130px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
+.linked-images-status { font-weight: 500; }
+.linked-images-quality label { display: block; margin: 12px 0 6px; }
+.linked-images-dialog progress { width: 100%; margin: 8px 0; }
+.linked-images-dialog .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.linked-images-dialog [hidden] { display: none !important; }
+
+.linked-images-dialog h2 { font-size: 18px; margin: 0 28px 12px 0; }
+.linked-images-dialog p, .linked-images-dialog ul { margin: 0 0 12px; }
+#canvas-area:has(.linked-images-banner:not([hidden])) .tool-hint { display: none; }

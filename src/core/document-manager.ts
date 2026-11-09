@@ -1,3 +1,4 @@
+import { assetRoots, assetSnapshot, restoreAssets } from './raster-assets';
 import type { AppState } from './state';
 import type { CanvasController, ViewState } from './canvas';
 import type { HistorySnapshot } from './history';
@@ -75,6 +76,7 @@ export class DocumentManager {
     this.tabs.push(this.blankTab(id, 'Untitled'));
     this.activeId = id;
     this.groupShown[0] = id;
+    assetRoots(() => this.tabs.filter(t => t.id !== this.activeId).flatMap(t => [t.svg ?? '', ...(t.history?.entries.map(e => e.svgContent) ?? [])]));
     registerSaveOwner(state, (snapshot) => this.captureSave(snapshot));
   }
 
@@ -270,6 +272,7 @@ export class DocumentManager {
   private loadTabIntoState(t: DocTab): void {
     this.state.runBatched(() => {
       if (t.svg == null) {
+        this.state.importHistory({ entries: [], index: -1, savedIndex: 0 });
         this.state.clearAll(); // fresh blank document (default frame)
       } else {
         loadDocumentSVG(this.state, t.svg, message => this.host.warn(message)); // rebuilds content + defs, resets history
@@ -339,7 +342,9 @@ export class DocumentManager {
       this.activeId = id;
       this.loadTabIntoState(this.active); // blank the live state for the new tab
     }
-    await pending.load(this.state);       // loads content; sets project name + file handle
+    const openingId = this.activeId, version = this.state.contentVersion;
+    await pending.load(this.state, () => this.activeId === openingId && this.state.contentVersion === version);
+    if (this.activeId !== openingId) return;       // loads content; sets project name + file handle
     this.active.title = this.currentTitle();
     this.active.dirty = this.state.dirty; // a freshly-loaded document is clean
     this.syncProjectName();
@@ -546,18 +551,19 @@ export class DocumentManager {
       };
     });
     const activeIndex = Math.max(0, this.tabs.findIndex(t => t.id === this.activeId));
-    return { tabs, activeIndex };
+    return { tabs, activeIndex, assets: assetSnapshot(tabs.map(t => t.svg ?? '')) };
   }
 
   /** Rebuild all tabs from a persisted session and load the active one into the
    *  live AppState. Returns false (leaving the boot document untouched) if the
    *  session is empty. Restored documents come back clean — the session store IS
    *  the durable copy of the work. */
-  restoreSession(session: Session): boolean {
+  restoreSession(session: Session, preserveCurrent = false): boolean {
     if (!session.tabs.length) return false;
+    restoreAssets(session.assets ?? []);
     const activeIndex = Math.max(0, Math.min(session.activeIndex, session.tabs.length - 1));
 
-    this.tabs = session.tabs.map(st => ({
+    const restoredTabs: DocTab[] = session.tabs.map(st => ({
       id: this.nextId(),
       title: st.title || 'Untitled',
       svg: st.svg,
@@ -574,6 +580,8 @@ export class DocumentManager {
       group: 0, // split state isn't persisted — a restored session starts unsplit
     }));
 
+    if (preserveCurrent) { this.tabs.push(...restoredTabs); this.onChange(); return true; }
+    this.tabs = restoredTabs;
     const activeTab = this.tabs[activeIndex];
     this.activeId = activeTab.id;
     this.groupShown = [activeTab.id, null];

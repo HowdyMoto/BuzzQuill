@@ -1,3 +1,5 @@
+import { scheduleRasterDetail } from '../core/raster-assets';
+import { updateLinkedImages } from './linked-images';
 import type { AppState } from '../core/state';
 import type { CanvasController } from '../core/canvas';
 import { renderTabBar } from './tab-bar';
@@ -106,10 +108,12 @@ export function createRenderCoordinator(
       return;
     }
 
+    scheduleRasterDetail();
     updatePropertiesPanel(state);
     updateStrokesPanel(state);
     updateEffectsPanel(state);
     updateFramePanel(state);
+    updateLinkedImages();
     updateWidthPanel(state);
     updateRepeatPanel(state);
     updateMarkersPanel(state);

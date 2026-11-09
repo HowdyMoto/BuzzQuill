@@ -1,11 +1,12 @@
 import { createMarqueeRect } from '../ui/overlay-chrome';
 import { BaseTool } from './base';
+import { SelectTool } from './select';
 import type { Point } from '../core/types';
-import { worldToLocal } from '../core/coords';
+import { worldToLocal, pointMapperBetween } from '../core/coords';
 import type { AnchorRef, HandleHit } from '../core/path-edit';
 
 /**
- * Direct Selection tool (Illustrator's white arrow). Clicking a path enters a
+ * Direct Selection tool (Illustrator's white arrow). Double-clicking a path enters a
  * node-editing session; anchors and handles can then be selected, moved, and
  * deleted. Handle drags respect the anchor's type (smooth mirrors, broken/Alt
  * is independent). Alt-dragging a CORNER anchor pulls symmetric tangent handles
@@ -14,6 +15,11 @@ import type { AnchorRef, HandleHit } from '../core/path-edit';
  */
 export class NodeEditTool extends BaseTool {
   name = 'directSelect';
+
+  // With no live point edit, the visible object handles must remain functional.
+  // Reuse the same transform implementation as V, including groups and images.
+  private readonly objectTool = new SelectTool(this.state, this.canvas, this.svgCanvas);
+  private objectGesture = false;
 
   private dragAnchor: AnchorRef | null = null;
   private dragHandle: HandleHit | null = null;
@@ -36,11 +42,12 @@ export class NodeEditTool extends BaseTool {
   private marqueeMoved = false;
   private marqueeAdditive = false;
   private marqueeFromEmpty = false;
+  private marqueeClickTarget: string | null = null;
   private marqueeRect: SVGRectElement | null = null;
 
   activate(): void {
     // If an editable shape is already selected, jump straight into editing it.
-    // enterPathEdit converts a primitive (rect/ellipse/polygon/star/line) to a
+    // enterPathEdit converts a point-based primitive (polygon/polyline/line) to a
     // path; it no-ops (returns false) for shapes that can't be node-edited.
     const sel = this.state.getSelectedShape();
     if (sel) this.state.enterPathEdit(sel.id);
@@ -51,6 +58,8 @@ export class NodeEditTool extends BaseTool {
     // ending the session below must not ask for a switch of its own (exitPathEdit
     // honours the marker). Harmless during the intended return (already null).
     this.state.nodeEditReturnTool = null;
+    this.objectTool.deactivate();
+    this.objectGesture = false;
     if (this.dirty) this.state.commitPathEdit();
     this.resetDrag();
     this.state.exitPathEdit();
@@ -64,14 +73,10 @@ export class NodeEditTool extends BaseTool {
     const session = this.state.pathEdit;
     const editingEl = this.editingElement();
 
-    // ---- Not editing yet: a single click just SELECTS (Figma-style). Selection is
-    // frame-transparent — clicking a shape inside a frame selects the SHAPE, not the
-    // frame. (The old code entered node-editing immediately AND resolved to the
-    // outermost shape ancestor, i.e. the frame, so nothing inside a frame could be
-    // picked.) Double-click (onDoubleClick) is what reveals the control points.
     if (!session || !editingEl) {
-      const el = this.pickSelect(this.unlockedTarget(e.target as SVGElement, e));
-      this.state.selectShape(el?.id ?? null);
+      this.resetDrag();
+      this.objectGesture = true;
+      this.objectTool.onMouseDown(pt, e);
       return;
     }
 
@@ -117,7 +122,7 @@ export class NodeEditTool extends BaseTool {
       return;
     }
 
-    // 3) Clicked a DIFFERENT shape while editing: leave vector-edit and select it
+    // 3) A plain click on a DIFFERENT shape leaves vector-edit and selects it
     // (single click selects; a double-click would enter ITS control points).
     // Not when the press is within reach of the editing path's own outline, though:
     // that's a press ON it, whatever is topmost under the pointer. Otherwise the
@@ -127,11 +132,9 @@ export class NodeEditTool extends BaseTool {
     // Same tolerance onDoubleClick inserts with, so the two always agree.
     const onOwnOutline = session.hitSegment(local.x, local.y, tol * 1.6) !== null;
     const other = onOwnOutline ? null : this.pickSelect(this.unlockedTarget(e.target as SVGElement, e));
-    if (other && other.id !== this.state.editingPathId) {
-      this.state.exitPathEdit(); // hops back to Select if that's where the edit began
-      this.state.selectShape(other.id);
-      return;
-    }
+    // Defer switching objects until mouseup: a press over background artwork or
+    // a frame can still become a marquee selecting this path's points.
+    this.marqueeClickTarget = other && other.id !== this.state.editingPathId ? other.id : null;
 
     // 4) On the editing path's body or empty space: begin a rubber-band select.
     // A drag selects the enclosed nodes; a plain click (no drag) clears the
@@ -144,6 +147,7 @@ export class NodeEditTool extends BaseTool {
   }
 
   onMouseMove(pt: Point, e: MouseEvent): void {
+    if (this.objectGesture) { this.objectTool.onMouseMove(pt, e); return; }
     const session = this.state.pathEdit;
     if (!session) return;
 
@@ -189,6 +193,11 @@ export class NodeEditTool extends BaseTool {
   }
 
   onMouseUp(pt: Point, _e: MouseEvent): void {
+    if (this.objectGesture) {
+      this.objectGesture = false;
+      this.objectTool.onMouseUp(pt, _e);
+      return;
+    }
     if (this.marquee) {
       const moved = this.marqueeMoved;
       this.removeMarqueeRect();
@@ -214,7 +223,7 @@ export class NodeEditTool extends BaseTool {
 
   onKeyDown(e: KeyboardEvent): void {
     const session = this.state.pathEdit;
-    if (!session) return;
+    if (!session) { this.objectTool.onKeyDown(e); return; }
     if (e.key === 'Escape') { this.state.exitPathEdit(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (session.selected.size > 0 && session.deleteSelected()) {
@@ -297,6 +306,7 @@ export class NodeEditTool extends BaseTool {
     this.dirty = false;
     this.marquee = false;
     this.marqueeMoved = false;
+    this.marqueeClickTarget = null;
     this.removeMarqueeRect();
   }
 
@@ -306,7 +316,12 @@ export class NodeEditTool extends BaseTool {
   private handleMarqueeClick(): void {
     const session = this.state.pathEdit;
     if (!session) return;
-    if (this.marqueeFromEmpty) {
+    if (this.marqueeClickTarget) {
+      const target = this.marqueeClickTarget;
+      this.marqueeClickTarget = null;
+      this.state.exitPathEdit();
+      this.state.selectShape(target);
+    } else if (this.marqueeFromEmpty) {
       this.state.exitPathEdit();
       this.state.selectShape(null);
     } else {
@@ -319,14 +334,19 @@ export class NodeEditTool extends BaseTool {
   private selectNodesInRect(end: Point): void {
     const session = this.state.pathEdit;
     if (!session) return;
-    const a = this.toLocal(this.marqueeStart);
-    const b = this.toLocal(end);
+    const layer = this.svgCanvas.querySelector<SVGGElement>('#drawing-layer');
+    const el = this.editingElement() as SVGGraphicsElement | null;
+    const map = layer && el ? pointMapperBetween(layer, el) : null;
+    if (!map) return;
+    const a = this.marqueeStart;
+    const b = end;
     const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
     const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
     if (!this.marqueeAdditive) session.clearSelection();
     session.model.subpaths.forEach((sp, spi) => {
       sp.anchors.forEach((an, i) => {
-        if (an.x >= minX && an.x <= maxX && an.y >= minY && an.y <= maxY) session.addSelect(spi, i);
+        const p = map(an.x, an.y);
+        if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) session.addSelect(spi, i);
       });
     });
     this.state.onChange_public();

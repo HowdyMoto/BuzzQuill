@@ -58,9 +58,14 @@ function updateNodeRow(state: AppState): void {
   row.style.display = active ? '' : 'none';
   if (!active) return;
   const type = session!.selectionType();
-  (document.getElementById('prop-node-corner') as HTMLButtonElement).classList.toggle('active', type === 'corner');
-  (document.getElementById('prop-node-smooth') as HTMLButtonElement).classList.toggle('active', type === 'smooth');
-  (document.getElementById('prop-node-broken') as HTMLButtonElement).classList.toggle('active', type === 'broken');
+  for (const mode of ['corner', 'smooth', 'broken']) {
+    const button = document.getElementById(`prop-node-${mode}`) as HTMLButtonElement;
+    button.classList.toggle('active', type === mode);
+    button.setAttribute('aria-pressed', String(type === mode));
+  }
+  const hint = document.getElementById('prop-node-hint');
+  if (hint) hint.textContent = type === 'corner' ? 'No curve handles' : type === 'smooth' ? 'Handles stay aligned' : type === 'broken' ? 'Handles move independently' : 'Mixed modes — choose one for all selected points';
+
 }
 
 /** Refresh ONLY the corner-radius fields (the linked field + the per-corner grid)

@@ -1,5 +1,6 @@
 import type { AppState } from '../core/state';
-import { placeImageDataUrl } from './import-image';
+import { showToast } from './toast';
+import { importRasterBlob } from './import-image';
 
 /**
  * Paste content from OUTSIDE the app onto the canvas:
@@ -22,17 +23,8 @@ function isEditable(el: EventTarget | null): boolean {
   return !!n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.isContentEditable === true);
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(blob);
-  });
-}
-
 async function embedImage(state: AppState, blob: Blob): Promise<void> {
-  placeImageDataUrl(state, await blobToDataUrl(blob));
+  await importRasterBlob(state, blob);
 }
 
 /** Drop pasted plain text onto the canvas as an editable point-text element,
@@ -115,7 +107,7 @@ function imageFileFrom(dt: DataTransfer): File | null {
 export function pasteFromDataTransfer(state: AppState, dt: DataTransfer, inPlace = false): boolean {
   // 1. Raster image → embed as <image>.
   const img = imageFileFrom(dt);
-  if (img) { void embedImage(state, img); return true; }
+  if (img) { void embedImage(state, img).catch(error => showToast(`Could not paste image: ${error instanceof Error ? error.message : String(error)}`)); return true; }
 
   // 2. Vector from another app → editable shapes.
   const svg = extractSvg(dt);

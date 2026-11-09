@@ -1,3 +1,4 @@
+import { StrokePicker, CAP_CHOICES, endChoices } from './stroke-picker';
 /**
  * Stroke-geometry controls for the Stroke panel, all path-level (they apply to
  * the whole shape / every stroke, not per-stroke — matching how designers think):
@@ -16,13 +17,18 @@ import type { ShapeData } from '../core/types';
 
 const OPEN_SHAPES = new Set(['line', 'polyline', 'path']);    // have ends → cap + markers
 const CORNER_SHAPES = new Set(['polyline', 'polygon', 'path', 'rect']); // have corners → join
-const CAPS = ['butt', 'round', 'square'] as const;
+let capPicker: StrokePicker;
+let startPicker: StrokePicker;
+let endPicker: StrokePicker;
 const JOINS = ['miter', 'round', 'bevel'] as const;
 
 /** The uniform cap/join of a shape's stroke(s): the element's attr for a plain
  *  shape, the (first) stroke layer's value for an appearance-wrapped one. */
-function shapeCap(state: AppState, shape: ShapeData): string {
-  if (shape.type === 'appearance') return state.getAppearance(shape.id).find(l => l.t === 'stroke')?.cap ?? 'butt';
+function shapeCap(state: AppState, shape: ShapeData): string | null {
+  if (shape.type === 'appearance') {
+    const caps = state.getAppearance(shape.id).filter(l => l.t === 'stroke').map(l => l.cap ?? 'butt');
+    return caps.every(c => c === caps[0]) ? caps[0] ?? 'butt' : null;
+  }
   return shape.element.getAttribute('stroke-linecap') || 'butt';
 }
 function shapeJoin(state: AppState, shape: ShapeData): string {
@@ -31,23 +37,16 @@ function shapeJoin(state: AppState, shape: ShapeData): string {
 }
 
 export function setupMarkers(state: AppState): void {
-  const start = document.getElementById('mk-start') as HTMLSelectElement | null;
-  const end = document.getElementById('mk-end') as HTMLSelectElement | null;
-  start?.addEventListener('change', () => {
-    if (state.selectedShapeIds.length) state.setSelectionMarker('start', start.value || null);
+  capPicker = new StrokePicker(document.getElementById('prop-cap-picker') as HTMLButtonElement, CAP_CHOICES, 'Cap style', value => {
+    if (state.selectedShapeIds.length) state.setSelectionStrokeCap(value as 'butt' | 'round' | 'square');
   });
-  end?.addEventListener('change', () => {
-    if (state.selectedShapeIds.length) state.setSelectionMarker('end', end.value || null);
+  startPicker = new StrokePicker(document.getElementById('mk-start') as HTMLButtonElement, endChoices(true), 'Start', value => {
+    if (state.selectedShapeIds.length) state.setSelectionMarker('start', value || null);
+  });
+  endPicker = new StrokePicker(document.getElementById('mk-end') as HTMLButtonElement, endChoices(false), 'End', value => {
+    if (state.selectedShapeIds.length) state.setSelectionMarker('end', value || null);
   });
 
-  document.querySelectorAll<HTMLButtonElement>('#prop-cap-buttons button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cap = btn.getAttribute('data-cap');
-      if (state.selectedShapeIds.length && (CAPS as readonly string[]).includes(cap ?? '')) {
-        state.setSelectionStrokeCap(cap as typeof CAPS[number]);
-      }
-    });
-  });
   document.querySelectorAll<HTMLButtonElement>('#prop-join-buttons button').forEach(btn => {
     btn.addEventListener('click', () => {
       const join = btn.getAttribute('data-join');
@@ -65,20 +64,23 @@ export function updateMarkersPanel(state: AppState): void {
   const showRow = (id: string, on: boolean) => { const r = document.getElementById(id); if (r) r.style.display = on ? '' : 'none'; };
 
   // Cap — open (has-ends) shapes.
-  const openShape = !!single && OPEN_SHAPES.has(single.type);
+  const geometryType = single?.type === 'appearance'
+    ? single.element.querySelector('[data-ap-src]')?.tagName.toLowerCase() : single?.type;
+  const openShape = !!geometryType && OPEN_SHAPES.has(geometryType);
   showRow('prop-cap-row', openShape);
-  if (openShape && single) setActive('#prop-cap-buttons', 'data-cap', shapeCap(state, single));
+  const uniform = (values: (string | null)[]) => values.every(v => v === values[0]) ? values[0] : null;
+  if (openShape && single) capPicker.update(uniform(state.getSelectedShapes().map(s => shapeCap(state, s))));
 
   // Corners (join) — cornered shapes.
-  const cornerShape = !!single && CORNER_SHAPES.has(single.type);
+  const cornerShape = !!geometryType && CORNER_SHAPES.has(geometryType);
   showRow('prop-join-row', cornerShape);
   if (cornerShape && single) setActive('#prop-join-buttons', 'data-join', shapeJoin(state, single));
 
   // Markers (arrowheads) — open shapes.
   showRow('prop-markers-row', openShape);
   if (openShape && single) {
-    const m = state.getMarkers(single.id);
-    (document.getElementById('mk-start') as HTMLSelectElement).value = m.start;
-    (document.getElementById('mk-end') as HTMLSelectElement).value = m.end;
+    const markers = state.getSelectedShapes().map(s => state.getMarkers(s.id));
+    startPicker.update(uniform(markers.map(m => m.start)));
+    endPicker.update(uniform(markers.map(m => m.end)));
   }
 }

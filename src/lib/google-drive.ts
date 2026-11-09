@@ -238,9 +238,9 @@ export async function downloadFile(id: string): Promise<Blob> {
 }
 
 /** One multipart/related body: a JSON metadata part, then the file content. */
-function multipart(meta: Record<string, unknown>, content: string, mime: string): { body: string; contentType: string } {
+function multipart(meta: Record<string, unknown>, content: string | Blob, mime: string): { body: string | Blob; contentType: string } {
   const boundary = `bq_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
-  const body = [
+  const head = [
     `--${boundary}`,
     'Content-Type: application/json; charset=UTF-8',
     '',
@@ -248,9 +248,9 @@ function multipart(meta: Record<string, unknown>, content: string, mime: string)
     `--${boundary}`,
     `Content-Type: ${mime}; charset=UTF-8`,
     '',
-    content,
-    `--${boundary}--`,
   ].join('\r\n');
+  const tail = `\r\n--${boundary}--`;
+  const body = typeof content === 'string' ? head + '\r\n' + content + tail : new Blob([head, '\r\n', content, tail]);
   return { body, contentType: `multipart/related; boundary=${boundary}` };
 }
 
@@ -287,7 +287,7 @@ function defaultFolder(token: string): Promise<string> {
 }
 
 /** New SVGs go into My Drive/BuzzQuill; overwrites never move existing files. */
-export async function createFile(name: string, svg: string): Promise<DriveFile> {
+export async function createFile(name: string, svg: string | Blob): Promise<DriveFile> {
   const token = freshToken();
   if (!token) throw new DriveAuthError('Connect Google Drive to save.');
   const folderId = await defaultFolder(token);
@@ -305,7 +305,7 @@ export async function createFile(name: string, svg: string): Promise<DriveFile> 
  * {@link DriveConflictError} without writing — Drive v3 has no atomic precondition,
  * so this is the best available guard against clobbering an edit made elsewhere.
  */
-export async function updateFile(id: string, svg: string, expectModified?: string | null): Promise<DriveFile> {
+export async function updateFile(id: string, svg: string | Blob, expectModified?: string | null): Promise<DriveFile> {
   if (expectModified) {
     const current = await getFileMeta(id);
     if (current.modifiedTime !== expectModified) throw new DriveConflictError(current.modifiedTime);

@@ -9,6 +9,6 @@ export interface PendingOpen {
   /** File name, used to title a freshly-created tab before content loads. */
   name: string;
   /** Load the picked document into `state` (no further prompts). */
-  load: (state: AppState) => Promise<void>;
+  load: (state: AppState, canCommit?: () => boolean) => Promise<void>;
 }
 

@@ -94,12 +94,18 @@ test('for two open paths Join leads the bar and leads the stagger', async ({ pag
   expect(order.map((o) => o.i), 'stagger index runs left to right').toEqual(order.map((_, i) => i));
 });
 
-test('with reduced motion the bar is fully there within a frame', async ({ page }) => {
+test('with reduced motion the bar and its items are immediately visible without animation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const [a] = await boot(page);
-  await page.evaluate((id) => (window as unknown as { state: AnyState }).state.selectShape(id), a);
-  await page.waitForTimeout(40);
-  const opacities = await page.evaluate(() => Array.from(document.querySelectorAll('#path-actions-popover, #path-actions-popover > *'))
-    .filter((e) => (e as HTMLElement).style.display !== 'none').map((e) => getComputedStyle(e).opacity));
-  expect(opacities.every((o) => o === '1'), `bar and every item opaque: ${opacities.join(',')}`).toBe(true);
+  // Read in the same browser task as selection: do not wait for a frame or a
+  // timer that could conceal a backwards-filled entrance animation.
+  const styles = await page.evaluate((id) => {
+    (window as unknown as { state: AnyState }).state.selectShape(id);
+    return Array.from(document.querySelectorAll('#path-actions-popover, #path-actions-popover > *'))
+      .filter((e) => (e as HTMLElement).style.display !== 'none')
+      .map((e) => { const s = getComputedStyle(e); return { opacity: s.opacity, animation: s.animationName }; });
+  }, a);
+  expect(styles.length).toBeGreaterThan(1);
+  for (const style of styles) expect(style).toEqual({ opacity: '1', animation: 'none' });
+  await expect(page.locator('#path-actions-popover')).toBeVisible();
 });

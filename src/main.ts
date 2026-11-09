@@ -1,5 +1,7 @@
 import { createRenderCoordinator } from './ui/render-coordinator';
 import { onDocumentIdentityChange } from './core/document-identity';
+import { scheduleRasterDetail } from './core/raster-assets';
+import { setupLinkedImages } from './ui/linked-images';
 import { isContainerEl } from './core/shape-props';
 import './style.css';
 import { AppState } from './core/state';
@@ -88,6 +90,7 @@ onDocumentIdentityChange(({ name }) => { document.title = `${name ?? 'Untitled'}
 
 // State & canvas
 const state = new AppState(drawingLayer, onStateChange);
+state.reportLargeCopy = message => showToast(message, 8000, undefined, 'info');
 // Let tools request a tool switch (setTool is a hoisted declaration below). Used
 // by the draw tools to return to Select after placing one shape (Figma-style).
 state.requestTool = (t) => setTool(t);
@@ -354,15 +357,6 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
   // must not also trigger the global editor shortcut for it.
   if (e.defaultPrevented) return;
 
-  // Node editing: Delete/Backspace removes the selected anchor points, not the
-  // whole path — so it can't go through the registry's edit.delete command.
-  if ((e.key === 'Delete' || e.key === 'Backspace') &&
-      state.editingPathId && state.pathEdit && state.pathEdit.selected.size > 0) {
-    e.preventDefault();
-    if (activeTool.onKeyDown) activeTool.onKeyDown(e);
-    return;
-  }
-
   // Spring-loaded pan: holding Space temporarily switches to the Hand tool and
   // restores the previous tool on keyup (handled below). Stateful, so bespoke.
   // Re-assert Hand on EVERY Space keydown (idempotent) rather than gating on a
@@ -453,6 +447,7 @@ document.getElementById('tb-default')?.addEventListener('click', () => runComman
 // Frame rulers re-render on view change (their tick spacing & labels are sized in
 // screen units, so they must refresh when the zoom changes).
 canvas.setOnViewChange(() => {
+  scheduleRasterDetail();
   activeTool.onViewChange?.();
   renderFrames(state, svgCanvas, canvas.getZoom()); // keep frame name/dimension labels a constant on-screen size while zooming
   renderFrameGuides(state, svgCanvas, canvas.getZoom());
@@ -491,6 +486,7 @@ setupInspector(state);
 setupStrokesPanel(state);
 setupEffects(state);
 setupFramePanel(state);
+setupLinkedImages(state, () => docs.activeId);
 setupWidthPanel(state);
 setupRepeatPanel(state);
 setupMarkers(state);
@@ -556,8 +552,9 @@ svgCanvas.setAttribute('data-tool', 'select');
 // the attempt do we start persisting, so a restore can't be clobbered by a save.
 void (async () => {
   try {
+    const bootId = docs.activeId, bootVersion = state.contentVersion;
     const session = await loadSession();
-    if (session) docs.restoreSession(session); // fires onStateChange + tab render
+    if (session) docs.restoreSession(session, docs.activeId !== bootId || state.contentVersion !== bootVersion); // fires onStateChange + tab render
   } catch { /* corrupt/unavailable session — start with the blank document */ }
   sessionRestored = true;
 })();

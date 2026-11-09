@@ -1,3 +1,4 @@
+import { portableSvg } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import type { ExportFormat, Artboard, ExportTarget } from '../core/types';
 import { bakeLayerContent } from '../core/bake';
@@ -105,7 +106,7 @@ async function buildTargetFile(
 
   const warnings = fit.note ? [...base2.warnings, fit.note] : base2.warnings;
   if (t.format === 'svg') {
-    return { blob: new Blob([resizeSvg(svgStr, w, h)], { type: 'image/svg+xml' }), filename: `${base}.svg`, format: 'svg', warnings };
+    return { blob: await portableSvg(resizeSvg(svgStr, w, h)), filename: `${base}.svg`, format: 'svg', warnings };
   }
   const blob = await rasterizeTo(svgStr, w, h, t.format, bg, t.quality ?? 0.92);
   return { blob, filename: `${base}.${t.format}`, format: t.format, warnings };
@@ -114,10 +115,11 @@ async function buildTargetFile(
 /** Rasterize an SVG string to an exact pixel size (px). Opaque formats (JPG/BMP/GIF)
  *  are painted onto a background first (default white); PNG/WebP/TIFF keep alpha unless
  *  a solid background was chosen. png/jpeg/webp use the native encoder, bmp/gif/tiff ours. */
-function rasterizeTo(svgString: string, w: number, h: number, format: RasterFormat, background = 'transparent', quality = 0.92): Promise<Blob> {
+async function rasterizeTo(svgString: string, w: number, h: number, format: RasterFormat, background = 'transparent', quality = 0.92): Promise<Blob> {
+  const portable = await portableSvg(svgString);
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const url = URL.createObjectURL(new Blob([svgString], { type: 'image/svg+xml' }));
+    const url = URL.createObjectURL(portable);
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(w));
@@ -505,7 +507,7 @@ async function exportArtboards(
 
     if (format === 'svg') {
       const svgStr = buildArtboardSVG(ab, drawingSvg, defsBlock, state.getExtraNamespaceDecls());
-      downloadBlob(new Blob([svgStr], { type: 'image/svg+xml' }), `${fileName}.svg`);
+      downloadBlob(await portableSvg(svgStr), `${fileName}.svg`);
     } else {
       const svgStr = buildArtboardSVG(ab, drawingSvg, defsBlock, state.getExtraNamespaceDecls());
       const blob = await rasterize(svgStr, ab.width, ab.height, scaleFor(ab), format);
@@ -537,16 +539,17 @@ function buildArtboardSVG(ab: Artboard, drawingSvg: string, defsBlock: string, e
 </svg>`;
 }
 
-function rasterize(
+async function rasterize(
   svgString: string,
   w: number,
   h: number,
   scale: number,
   format: ExportFormat,
 ): Promise<Blob> {
+  const portable = await portableSvg(svgString);
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const blob = portable;
     const url = URL.createObjectURL(blob);
 
     img.onload = () => {

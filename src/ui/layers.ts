@@ -791,7 +791,7 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
     if (!draggedId || draggedId === shape.id) return;
     e.preventDefault();
     // Repeat wrappers accept 'inside' drops like groups (the drop joins the cell).
-    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat');
+    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat' || shape.type === 'frame');
     clearDropMarks(li);
 
     // Resolve the depth/outdent the drop would use, so the legality check matches
@@ -806,7 +806,7 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
 
     // Illegal (e.g. a frame into another frame): show a red "can't drop" state and
     // the OS no-drop cursor instead of the blue insertion indicator.
-    if (!curState?.canDrop(draggedId, shape.id, zone, outdent)) {
+    if (!curState?.canDrop(draggedIds.length ? draggedIds : draggedId, shape.id, zone, outdent)) {
       e.dataTransfer!.dropEffect = 'none';
       li.classList.add('drop-illegal');
       return;
@@ -825,18 +825,17 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
   li.addEventListener('dragleave', () => clearDropMarks(li));
   li.addEventListener('drop', (e) => {
     e.preventDefault();
-    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat');
+    const zone = dropZone(e, li, shape.type === 'group' || shape.type === 'repeat' || shape.type === 'frame');
     const depth = zone === 'after' ? afterDropDepth : 0;
     clearDropMarks(li);
     if (draggedId && draggedId !== shape.id) {
-      let ok: boolean;
-      if (zone === 'onto') ok = state.groupShapes(draggedIds.length ? draggedIds : draggedId, shape.id);
-      else {
-        // outdentLevels = how many container levels shallower than the target row.
-        const idx = vRows.findIndex(r => r.shape.id === shape.id);
-        const targetDepth = idx >= 0 ? vRows[idx].depth : 0;
-        ok = state.moveShape(draggedId, shape.id, zone, zone === 'after' ? Math.max(0, targetDepth - depth) : 0);
-      }
+      const dragged = draggedIds.length ? draggedIds : draggedId;
+      const idx = vRows.findIndex(r => r.shape.id === shape.id);
+      const targetDepth = idx >= 0 ? vRows[idx].depth : 0;
+      const outdent = zone === 'after' ? Math.max(0, targetDepth - depth) : 0;
+      const ok = state.canDrop(dragged, shape.id, zone, outdent) &&
+        (zone === 'onto' ? state.groupShapes(dragged, shape.id)
+          : state.moveShape(dragged, shape.id, zone, outdent));
       // A rejected drop (illegal rearrange) leaves the tree unchanged — say "nope".
       if (!ok) rejectDrop(li);
     }

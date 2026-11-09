@@ -4,6 +4,7 @@ import type { Artboard, ShapeStyle } from './types';
 import { escapeHtml } from './markup-escape';
 import { SVG_NS_DECLS, ensureSvgNamespaces } from './svg-ns';
 import { buildEmbeddedFontStyle, embeddedFontFaceStyle } from './text-outline';
+import { compactAssets, portableSvg, releasePrepared, assetIds } from './raster-assets';
 
 const FORMAT_VERSION = 1;
 
@@ -75,11 +76,11 @@ export function serializeDocumentSVG(state: AppState): string {
   const b = unionArtboardBounds(state);
   const metaJson = escapeHtml(JSON.stringify(buildMeta(state)));
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return compactAssets(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" ${SVG_NS_DECLS}${state.getExtraNamespaceDecls()} viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="${b.w}" height="${b.h}">
 <metadata class="svgmaker-state">${metaJson}</metadata>
 ${state.getDefsBlock()}<g class="svgmaker-doc">${state.getDrawingLayerSVG()}</g>
-</svg>`;
+</svg>`);
 }
 
 /**
@@ -92,13 +93,13 @@ ${state.getDefsBlock()}<g class="svgmaker-doc">${state.getDrawingLayerSVG()}</g>
  * document-wide, but our loader only imports `<defs>` + the drawing group, so it's
  * ignored on reopen (no round-trip accumulation). Re-derived fresh on every save.
  */
-export async function serializeDocumentSVGForSave(state: AppState, base = serializeDocumentSVG(state)): Promise<{ svg: string; warnings: string[] }> {
+export async function serializeDocumentSVGForSave(state: AppState, base = serializeDocumentSVG(state)): Promise<{ svg: string | Blob; warnings: string[] }> {
   const markup = state.getDrawingLayerSVG();
   const docFaces = embeddedFontFaceStyle(state.embeddedFonts, markup); // e.g. PDF-import fonts
   const bundled = await buildEmbeddedFontStyle(markup);                 // bundled families in use
   const style = [docFaces, bundled.style].filter(Boolean).join('\n');
   const svg = style ? base.replace('</metadata>', `</metadata>\n${style}`) : base;
-  return { svg, warnings: bundled.warnings };
+  return { svg: svg.includes('data-bq-raster=') ? await portableSvg(svg) : svg, warnings: bundled.warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -121,12 +122,10 @@ function applyShapeMeta(state: AppState, shapes: SerializedShape[]): void {
 
 /** Load a document from an SVG string (ours, with metadata, or a foreign SVG). */
 export function loadDocumentSVG(state: AppState, svgString: string, warn: (message: string) => void = () => {}): void {
+  releasePrepared(assetIds(svgString));
   const doc = new DOMParser().parseFromString(ensureSvgNamespaces(svgString), 'image/svg+xml');
   const svgEl = doc.querySelector('svg');
   if (!svgEl) throw new Error('File is not a valid SVG.');
-
-  // A point edit left open would point at a shape in the document being replaced.
-  state.exitPathEdit();
 
   // Look for our embedded editor metadata.
   let meta: DocMeta | null = null;
@@ -138,12 +137,16 @@ export function loadDocumentSVG(state: AppState, svgString: string, warn: (messa
     } catch { /* not our metadata — treat as a foreign SVG */ }
   }
 
+  if (meta?.shapes?.length && !svgEl.querySelector('g.svgmaker-doc')?.children.length) {
+    throw new Error('This file contains editor settings but no drawing data. The drawing was not saved in this copy. Try an earlier copy or a recovered tab.');
+  }
+  // Validate before touching the current drawing or its undo history.
+  if (meta && meta.version > FORMAT_VERSION) throw new Error(`This file was made with a newer BuzzQuill (v${meta.version}). Please update.`);
+  state.exitPathEdit();
+  state.importHistory({ entries: [], index: -1, savedIndex: 0 });
+
   if (meta) {
     // ---- Our document: restore everything ----
-    if (meta.version > FORMAT_VERSION) {
-      throw new Error(`This file was made with a newer BuzzQuill (v${meta.version}). Please update.`);
-    }
-
     state.clearDefs();
     state.importDefsFrom(svgEl);
 

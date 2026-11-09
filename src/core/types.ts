@@ -227,6 +227,7 @@ export interface PatternDef {
   weight?: number;
   // Image params
   imageDataUrl?: string;
+  imageAssetId?: string;
   // Object params — a tile drawn from your own artwork. The markup is normalized to
   // the origin at creation, so rendering only has to scale it.
   sourceMarkup?: string;

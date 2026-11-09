@@ -1,3 +1,4 @@
+import { adoptEmbeddedRaster } from './raster-assets';
 /**
  * Security sanitization for untrusted SVG entering the live DOM.
  *
@@ -22,6 +23,7 @@
  * SVG subtrees BuzzQuill actually imports.
  */
 
+import { preserveLinkedImage } from './linked-images';
 import { SVG_NS_DECLS } from './svg-ns';
 
 /**
@@ -109,6 +111,8 @@ export function sanitizeSvgElement(el: Element): boolean {
       toRemove.push(node);
       return; // drop the whole subtree; no need to descend
     }
+    adoptEmbeddedRaster(node);
+    preserveLinkedImage(node);
     for (const attr of Array.from(node.attributes)) {
       const name = attr.name.toLowerCase();
       if (attr.localName.toLowerCase().startsWith('on')) {

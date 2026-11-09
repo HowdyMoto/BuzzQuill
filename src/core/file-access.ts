@@ -1,3 +1,4 @@
+import { readAssetSvg } from './raster-assets';
 /**
  * Thin wrapper around the File System Access API (Chrome/Edge) with a
  * graceful anchor-download fallback for browsers that don't support it
@@ -96,6 +97,13 @@ export async function readHandle(handle: FileSystemFileHandle): Promise<string> 
  *     (ISO-8859-1, Windows-1252, UTF-16, …) — decoded with the right TextDecoder.
  */
 export async function readSvgFile(file: Blob): Promise<string> {
+  if (file.size > 8 * 1024 * 1024) {
+    const prefix = new Uint8Array(await file.slice(0, 256).arrayBuffer());
+    const declaration = new TextDecoder().decode(prefix);
+    const encoding = /encoding=["']([^"']+)/i.exec(declaration)?.[1];
+    if (prefix[0] !== 0 && prefix[1] !== 0 && prefix[0] !== 0x1f && prefix[0] !== 0xff && prefix[0] !== 0xfe && (!encoding || /^utf-?8$/i.test(encoding)))
+      return readAssetSvg(file);
+  }
   let buf = await file.arrayBuffer();
   const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
   // Gzip magic (1f 8b) → it's an .svgz / gzipped .svg; inflate first.

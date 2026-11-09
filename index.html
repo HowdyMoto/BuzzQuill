@@ -402,14 +402,11 @@
         <div class="panel" id="panel-frame" style="display:none">
           <div class="panel-header">
             <span>Export</span>
+            <button id="fp-export-add" class="panel-add" title="Add a target or preset" aria-label="Add export target">+</button>
             <button class="panel-collapse">&#x25BC;</button>
           </div>
           <div class="panel-body">
             <div class="fp-export">
-              <div class="fp-export-head">
-                <span class="appearance-label">Targets</span>
-                <button id="fp-export-add" class="fp-export-add" title="Add a target or preset" aria-label="Add export target">+</button>
-              </div>
               <div id="fp-export-list"></div>
               <button id="fp-export-btn" class="fp-export-btn" title="Export all targets">Export</button>
               <div id="fp-export-dest" class="fp-export-dest" hidden></div>
@@ -558,11 +555,7 @@
                  first-class control. Shown/driven by ui/markers.ts for open paths. -->
             <div class="appearance-row" id="prop-cap-row" style="display:none">
               <span class="appearance-label" title="Line-end cap">Cap</span>
-              <div class="stroke-seg" id="prop-cap-buttons">
-                <button data-cap="butt" title="Flat — the stroke ends exactly at the endpoint"><span>Flat</span></button>
-                <button data-cap="round" title="Round — a semicircle past the endpoint"><span>Round</span></button>
-                <button data-cap="square" title="Square — a square projecting past the endpoint"><span>Square</span></button>
-              </div>
+              <button id="prop-cap-picker" type="button" aria-label="Cap style"></button>
             </div>
 
             <!-- Corner join (shapes with corners): the shape of the corners where
@@ -579,19 +572,14 @@
             <!-- Arrowheads / markers (lines & open paths) — a stroke property, so it
                  lives in the Stroke panel. Shown by ui/markers.ts for lines/open paths. -->
             <div class="appearance-row" id="prop-markers-row" style="display:none">
-              <span class="appearance-label" title="Line ends">Ends</span>
-              <select id="mk-start" class="appearance-select" title="Start marker">
-                <option value="">Start: None</option>
-                <option value="mk-arrow">Start: Arrow</option>
-                <option value="mk-dot">Start: Dot</option>
-                <option value="mk-open">Start: Open</option>
-              </select>
-              <select id="mk-end" class="appearance-select" title="End marker">
-                <option value="">End: None</option>
-                <option value="mk-arrow">End: Arrow</option>
-                <option value="mk-dot">End: Dot</option>
-                <option value="mk-open">End: Open</option>
-              </select>
+              <div class="appearance-row stroke-end-row">
+                <span class="appearance-label">Start</span>
+                <button id="mk-start" type="button" aria-label="Start style"></button>
+              </div>
+              <div class="appearance-row stroke-end-row">
+                <span class="appearance-label">End</span>
+                <button id="mk-end" type="button" aria-label="End style"></button>
+              </div>
             </div>
           </div>
         </div>
@@ -690,11 +678,12 @@
             <!-- Node point type (shown while node-editing a path) -->
             <div class="appearance-row" id="prop-node-row" style="display:none">
               <span class="appearance-label" title="Anchor point type">Point</span>
-              <div class="seg-btns">
-                <button class="appearance-toggle" id="prop-node-corner" title="Corner point (no handles)">Corner</button>
-                <button class="appearance-toggle" id="prop-node-smooth" title="Smooth point (connected handles)">Smooth</button>
-                <button class="appearance-toggle" id="prop-node-broken" title="Broken point (separated handles)">Broken</button>
+              <div class="seg-btns point-mode-buttons" role="group" aria-label="Point mode">
+                <button class="point-mode" aria-pressed="false" id="prop-node-corner" title="Corner: remove this point’s curve handles">Corner</button>
+                <button class="point-mode" aria-pressed="false" id="prop-node-smooth" title="Smooth: keep handles aligned; lengths stay independent">Smooth</button>
+                <button class="point-mode" aria-pressed="false" id="prop-node-broken" title="Broken: move each handle independently">Broken</button>
               </div>
+              <span id="prop-node-hint" class="point-mode-hint"></span>
             </div>
 
           </div>

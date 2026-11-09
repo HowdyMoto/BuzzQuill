@@ -14,7 +14,7 @@ async function setup(page: Page, d = 'M 260 80 L 420 80 L 420 220 L 260 220 Z M 
   }, d);
 }
 
-test('A pulses anchors in stored order per subpath without changing the path or restarting on render', async ({ page }) => {
+test('A pulses all anchors together without changing the path or restarting on render', async ({ page }) => {
   const id = await setup(page);
   const original = await page.locator(`[id="${id}"]`).getAttribute('d');
   await page.keyboard.press('a');
@@ -29,16 +29,15 @@ test('A pulses anchors in stored order per subpath without changing the path or 
       inert: halos.every(el => el.getAttribute('pointer-events') === 'none') };
   });
   expect(result.ids).toEqual(['0:0', '0:1', '0:2', '0:3', '1:0', '1:1', '1:2']);
-  expect(result.delays[1] - result.delays[0]).toBeCloseTo(90);
-  expect(result.delays[3] - result.delays[0]).toBeCloseTo(270);
+  expect(new Set(result.delays).size).toBe(1);
   expect(result.delays[4]).toBe(result.delays[0]);
   expect(result.after).toBeLessThanOrEqual(result.before);
   expect(result.inert).toBe(true);
   await expect(page.locator('[data-node-direction]')).toHaveCount(0);
-  await expect(page.locator('[data-node-direction-stroke]')).toHaveCount(0);
+  await expect(page.locator('[data-node-direction-arrow]')).toHaveCount(0);
   await page.evaluate(() => (window as any).state.onChange_public());
   await expect(page.locator('[data-node-direction]')).toHaveCount(0);
-  await expect(page.locator('[data-node-direction-stroke]')).toHaveCount(0);
+  await expect(page.locator('[data-node-direction-arrow]')).toHaveCount(0);
   expect(await page.locator(`[id="${id}"]`).getAttribute('d')).toBe(original);
   await page.keyboard.press('v');
   await page.keyboard.press('a');
@@ -54,7 +53,7 @@ test('anchors can be dragged immediately and the reveal stops', async ({ page })
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 });
   await expect(page.locator('[data-node-direction]')).toHaveCount(0);
-  await expect(page.locator('[data-node-direction-stroke]')).toHaveCount(0);
+  await expect(page.locator('[data-node-direction-arrow]')).toHaveCount(0);
   await page.mouse.up();
   const moved = (await anchor.boundingBox())!;
   expect(moved.x).toBeGreaterThan(box.x + 20);
@@ -105,44 +104,39 @@ test('dense paths finish promptly; reduced motion shows editable anchors immedia
     return parseFloat(style.animationDelay) + parseFloat(style.animationDuration);
   }));
   expect(timings.length).toBeGreaterThan(0);
-  expect(Math.max(...timings)).toBeLessThanOrEqual(1.08);
+  expect(Math.max(...timings)).toBeLessThanOrEqual(0.4);
   await page.keyboard.press('v');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.keyboard.press('a');
   await expect(page.locator('[data-node-anchor]')).toHaveCount(101);
   await expect(page.locator('[data-node-direction]')).toHaveCount(0);
-  await expect(page.locator('[data-node-direction-stroke]')).toHaveCount(0);
+  await expect(page.locator('[data-node-direction-arrow]')).toHaveCount(0);
 });
 
-test('stroke head meets every pulsing point on a mirrored curve and completes the closing segment', async ({ page }) => {
-  const id = await setup(page, 'M 260 80 C 260 280 420 20 420 120 L 460 180 Z');
-  await page.evaluate(id => document.getElementById(id)!.setAttribute('transform', 'translate(800 0) scale(-1 1)'), id);
-  await page.keyboard.press('a');
-  const samples = await page.locator('[data-node-direction-stroke="0"]').first().evaluate(el => {
-    const path = el as SVGPathElement;
-    const animation = path.getAnimations()[0];
-    animation.pause();
-    const frames = animation.effect!.getKeyframes();
-    const duration = Number(animation.effect!.getTiming().duration);
-    const tail = parseFloat(path.getAttribute('stroke-dasharray')!);
-    return frames.slice(1, -1).map((frame, index) => {
-      animation.currentTime = frame.computedOffset * duration;
-      const distance = tail - parseFloat(getComputedStyle(path).strokeDashoffset);
-      const head = path.getPointAtLength(distance * path.getTotalLength());
-      const marker = document.querySelector<SVGGraphicsElement>(`[data-node-anchor="0:${index % 3}"]`)!;
-      const box = marker.getBBox();
-      return { x: head.x, y: head.y, anchorX: box.x + box.width / 2, anchorY: box.y + box.height / 2,
-        time: frame.computedOffset * duration };
+for (const scenario of [
+  { name: 'line', d: 'M 260 80 L 420 80', transform: '', dx: 1, dy: 0 },
+  { name: 'mirrored curve', d: 'M 260 80 C 360 180 420 20 420 120 Z', transform: 'translate(800 0) scale(-1 1)', dx: -Math.SQRT1_2, dy: Math.SQRT1_2 },
+  { name: 'collapsed first handle', d: 'M 260 80 C 260 80 260 180 420 120', transform: '', dx: 0, dy: 1 },
+  { name: 'duplicate first point', d: 'M 260 80 L 260 80 L 420 80', transform: '', dx: 1, dy: 0 },
+]) {
+  test(`start arrow follows the ${scenario.name} tangent`, async ({ page }) => {
+    const id = await setup(page, scenario.d);
+    await page.evaluate(({ id, transform }) => document.getElementById(id)!.setAttribute('transform', transform), { id, transform: scenario.transform });
+    await page.keyboard.press('a');
+    const arrow = page.locator('[data-node-direction-arrow="0"]');
+    const geometry = await arrow.evaluate(el => {
+      const path = el as SVGPathElement;
+      const start = path.getPointAtLength(0);
+      const marker = document.querySelector<SVGGraphicsElement>('[data-node-anchor="0:0"]')!.getBBox();
+      return { start: { x: start.x, y: start.y },
+        origin: { x: marker.x + marker.width / 2, y: marker.y + marker.height / 2 } };
     });
+    const dx = geometry.start.x - geometry.origin.x, dy = geometry.start.y - geometry.origin.y;
+    const length = Math.hypot(dx, dy);
+    expect(dx / length).toBeCloseTo(scenario.dx);
+    expect(dy / length).toBeCloseTo(scenario.dy);
+    expect(await arrow.getAttribute('pointer-events')).toBe('none');
+    expect(await page.locator('#drawing-layer [data-node-direction-arrow]').count()).toBe(0);
+    await expect(arrow).toHaveCount(0);
   });
-  expect(samples).toHaveLength(4); // three written points, then back to start
-  for (const [i, sample] of samples.entries()) {
-    expect(sample.x).toBeCloseTo(sample.anchorX, 0);
-    expect(sample.y).toBeCloseTo(sample.anchorY, 0);
-    expect(sample.time).toBeCloseTo(84 + i * 90, 0);
-  }
-  expect(await page.locator('[data-node-direction-stroke]').first().getAttribute('pointer-events')).toBe('none');
-  expect(await page.locator('#drawing-layer [data-node-direction-stroke]').count()).toBe(0);
-  await page.keyboard.press('v');
-  await expect(page.locator('[data-node-direction-stroke]')).toHaveCount(0);
-});
+}

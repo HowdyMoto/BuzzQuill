@@ -1,7 +1,7 @@
 import type { PendingOpen } from '../core/pending-open';
 import { serializeDocumentSVG, serializeDocumentSVGForSave,
   loadDocumentSVG as decodeSVG, loadDocumentString as decodeString } from '../core/document-codec';
-
+import { pinAssets, releasePrepared, assetIds, collectAssets } from '../core/raster-assets';
 import type { AppState } from '../core/state';
 import type { FilePickerType } from '../core/file-access';
 import type { PdfImportChoice } from './dialogs';
@@ -11,7 +11,6 @@ import {
   saveFilePicker,
   writeHandle,
   ensureWritePermission,
-  readHandle,
   readSvgFile,
   downloadFile,
 } from '../core/file-access';
@@ -22,7 +21,7 @@ import { adoptSource } from '../core/document-identity';
 export { adoptSource, getProjectName, setProjectName, hasDiskCopy, setDiskCopy } from '../core/document-identity';
 import { captureSaveTarget } from '../core/document-save';
 
-// Compatibility exports keep existing UI consumers and browser harnesses working.
+// Compatibility exports retain UI consumers and browser harness imports.
 export { serializeDocumentSVG, serializeDocumentSVGForSave, loadProject } from '../core/document-codec';
 export type { PendingOpen } from '../core/pending-open';
 
@@ -52,7 +51,9 @@ export function confirmDiscard(state: AppState): boolean {
 
 /** Snapshot content and its owner together, before any asynchronous interaction. */
 export function beginDocumentSave(state: AppState) {
-  const snapshot = serializeDocumentSVG(state);
+  let snapshot: string;
+  try { snapshot = serializeDocumentSVG(state); }
+  catch (error) { showToast(error instanceof Error ? error.message : 'Could not save this drawing safely.'); return null; }
   const target = captureSaveTarget(state, snapshot);
   if (!target) {
     showToast('This document is already being saved.');
@@ -60,7 +61,8 @@ export function beginDocumentSave(state: AppState) {
   }
   // Attach rejection handling immediately: a picker/sign-in may stay open while
   // font preparation finishes. The caller awaits this result before writing.
-  const content = serializeDocumentSVGForSave(state, snapshot).then(
+  const unpin = pinAssets(snapshot);
+  const content = serializeDocumentSVGForSave(state, snapshot).finally(unpin).then(
     value => ({ value, error: null }),
     (error: unknown) => ({ value: null, error }),
   );
@@ -81,13 +83,25 @@ const HEAVY_DOC_BYTES = 1_000_000;
  * enough that the synchronous import would otherwise look like a frozen app.
  */
 export async function loadDocumentStringWithFeedback(
-  state: AppState, text: string, name: string,
-): Promise<void> {
-  if (text.length < HEAVY_DOC_BYTES) {
-    loadDocumentString(state, text);
-    return;
-  }
-  await withLoadingOverlay(`Opening ${name}…`, () => loadDocumentString(state, text));
+  state: AppState, text: string, name: string, canCommit = () => true,
+): Promise<boolean> {
+  const apply = () => {
+    if (!canCommit()) { releasePrepared(assetIds(text)); collectAssets(); return false; }
+    loadDocumentString(state, text); return true;
+  };
+  if (text.length < HEAVY_DOC_BYTES) return apply();
+  return withLoadingOverlay(`Opening ${name}…`, apply);
+}
+
+/** Cover file reading and image preparation, even when the resulting SVG is tiny. */
+export async function loadSvgFileWithFeedback(
+  state: AppState, file: Blob, name: string, canCommit = () => true,
+): Promise<boolean> {
+  const load = async () => {
+    const text = await readSvgFile(file);
+    return loadDocumentStringWithFeedback(state, text, name, canCommit);
+  };
+  return file.size >= HEAVY_DOC_BYTES ? withLoadingOverlay(`Opening ${name}…`, load) : load();
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +205,7 @@ export async function pendingFromHandle(handle: FileSystemFileHandle): Promise<P
       await rememberRecentFile(handle);
     } };
   }
-  return { name: handle.name, load: (s) => openHandle(s, handle) };
+  return { name: handle.name, load: (s, canCommit) => openHandle(s, handle, canCommit) };
 }
 
 /**
@@ -225,9 +239,8 @@ export async function pickDocumentToOpen(): Promise<PendingOpen | null> {
   }
   return {
     name: file.name,
-    load: async (s) => {
-      const text = await readSvgFile(file);
-      await loadDocumentStringWithFeedback(s, text, file.name);
+    load: async (s, canCommit) => {
+      if (!await loadSvgFileWithFeedback(s, file, file.name, canCommit)) return;
       // Can't write back without FS Access — but the file it came from is on disk.
       adoptSource(null, file.name, true);
     },
@@ -249,15 +262,16 @@ function pickFileViaInput(accept: string): Promise<File | null> {
 }
 
 /** Load document text that has no writable handle (e.g. a dropped file). */
-export async function openTextWithoutHandle(state: AppState, text: string, name: string): Promise<void> {
-  await loadDocumentStringWithFeedback(state, text, name);
+export async function openTextWithoutHandle(state: AppState, text: string, name: string, canCommit = () => true): Promise<boolean> {
+  if (!await loadDocumentStringWithFeedback(state, text, name, canCommit)) return false;
   adoptSource(null, name, true); // the dropped file is still on disk
+  return true;
 }
 
 /** Open a document directly from a handle (used by Open and Recent Files). */
-export async function openHandle(state: AppState, handle: FileSystemFileHandle): Promise<void> {
-  const text = await readHandle(handle);
-  await loadDocumentStringWithFeedback(state, text, handle.name);
+export async function openHandle(state: AppState, handle: FileSystemFileHandle, canCommit = () => true): Promise<void> {
+  const file = await handle.getFile();
+  if (!await loadSvgFileWithFeedback(state, file, handle.name, canCommit)) return;
   adoptSource({ kind: 'local', handle }, handle.name);
   await rememberRecentFile(handle);
 }
