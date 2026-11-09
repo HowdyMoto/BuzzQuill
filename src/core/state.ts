@@ -1250,6 +1250,7 @@ export class AppState {
     if (this.editingPathId && (this.selectedShapeIds.length !== 1 ||
         this.selectedShapeIds[0] !== this.editingPathId ||
         !this.editingOwnerEl?.isConnected ||
+        !this.isVisibleForPointEditing(this.editingOwnerEl) ||
         this.findShapeById(this.editingPathId)?.element !== this.editingOwnerEl ||
         (this.editingSourceEl && !this.editingSourceEl.isConnected))) {
       this.exitPathEdit(false);
@@ -1537,10 +1538,18 @@ export class AppState {
 
   // ---- Node editing ----
 
+  /** A hidden layer or container cannot own an active canvas point edit. */
+  private isVisibleForPointEditing(el: Element): boolean {
+    for (let node: Element | null = el; node && node !== this.drawingLayer; node = node.parentElement) {
+      if ((node as SVGElement).style.display === 'none') return false;
+    }
+    return true;
+  }
+
   /** Begin editing a path's anchors. No-op for non-path shapes. */
   enterPathEdit(id: string): boolean {
     const shape = this.findShapeById(id);
-    if (!shape || shape.locked) return false;
+    if (!shape || shape.locked || !this.isVisibleForPointEditing(shape.element)) return false;
 
     // Wrapped vector (variable-width `data-width` / multi-stroke `data-appearance`):
     // the geometry lives on the inner SOURCE path, not the wrapper `<g>`. Edit that
