@@ -166,3 +166,80 @@ test('a delayed nudge commit cannot amend the history entry reached by undo', as
   expect(actual).toEqual({ ...expected, interactive: false });
   expect(errors).toEqual([]);
 });
+
+
+for (const angle of [90, 180, 270]) {
+  test(`pasted raster arrows follow canvas axes after ${angle} degree rotation`, async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window as any).docs);
+    await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 120; canvas.height = 80;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#2385c7'; ctx.fillRect(0, 0, 120, 80);
+      const blob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!)));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], 'pasted.png', { type: 'image/png' }));
+      document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    const image = page.locator('#drawing-layer image');
+    await expect(image).toHaveCount(1);
+    await page.locator('#prop-rotation').fill(String(angle));
+    await page.locator('#prop-rotation').press('Enter');
+    await page.locator('#prop-rotation').blur();
+    const position = () => page.evaluate(async () => {
+      const { localBBoxInLayer } = await import('/src/core/coords.ts');
+      return localBBoxInLayer(document.querySelector('#svg-canvas')!, document.querySelector('#drawing-layer image')!)!;
+    });
+    for (const [key, dx, dy] of [['ArrowUp', 0, -1], ['ArrowRight', 1, 0], ['Shift+ArrowDown', 0, 10], ['Shift+ArrowLeft', -10, 0]] as const) {
+      const before = await position();
+      await page.keyboard.press(key);
+      const after = await position();
+      expect(after.x - before.x).toBeCloseTo(dx, 5);
+      expect(after.y - before.y).toBeCloseTo(dy, 5);
+    }
+  });
+}
+
+test('vertically flipped raster moves up in canvas space and supports undo/redo', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window as any).docs);
+  await page.evaluate(() => {
+    const s = (window as any).state;
+    s.importSVGContent('<svg xmlns="http://www.w3.org/2000/svg"><image id="raster" x="100" y="100" width="120" height="80" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/></svg>');
+    s.selectShape('raster');
+    s.flipSelected('vertical');
+  });
+  const image = page.locator('#raster');
+  const before = (await image.boundingBox())!;
+  await page.keyboard.press('ArrowUp');
+  const after = (await image.boundingBox())!;
+  expect(after.y).toBeLessThan(before.y);
+  await page.evaluate(() => (window as any).state.undo());
+  expect((await image.boundingBox())!.y).toBeCloseTo(before.y, 5);
+  await page.evaluate(() => (window as any).state.redo());
+  expect((await image.boundingBox())!.y).toBeCloseTo(after.y, 5);
+});
+
+test('image and paths rotated together with canvas handle nudge along canvas axes', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window as any).docs);
+  await page.evaluate(() => {
+    const s = (window as any).state;
+    s.importSVGContent('<svg xmlns="http://www.w3.org/2000/svg"><image id="raster" x="200" y="200" width="120" height="80" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/><path id="path1" d="M 350 200 L 400 250 L 350 280 Z"/></svg>');
+    s.selectMultiple(['raster', 'path1']);
+  });
+  const bounds = await page.locator('#drawing-layer').boundingBox();
+  const handle = (await page.locator('#selection-layer [data-handle="rotate"]').boundingBox())!;
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x, 2 * (bounds!.y + bounds!.height / 2) - y, { steps: 10 });
+  await page.mouse.up();
+  for (const key of ['ArrowUp', 'ArrowRight']) {
+    const before = await page.locator('#raster').boundingBox();
+    await page.keyboard.press(key);
+    const after = (await page.locator('#raster').boundingBox())!;
+    if (key === 'ArrowUp') expect(after.y).toBeLessThan(before!.y);
+    else expect(after.x).toBeGreaterThan(before!.x);
+  }
+});

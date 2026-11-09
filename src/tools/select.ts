@@ -12,7 +12,7 @@ import {
   drawSnapGuides, clearSnapGuides, SNAP_PX, grabAnchor, collectPointTargets, computePointSnap,
   type SnapTargets,
 } from '../core/snapping';
-import { localBBoxInLayer, visualWorldBBox, visualLocalBBox, worldToLocal, pathMidFrame, layerDeltaToLocal, layerRotationOf, localBBoxIn, matrixBetween } from '../core/coords';
+import { localBBoxInLayer, visualWorldBBox, visualLocalBBox, worldToLocal, pathMidFrame, layerDeltaToLocal, layerRotationOf, localBBoxIn, matrixBetween, ownTransformMatrix } from '../core/coords';
 import { bakeOwnTransform } from '../core/bake';
 import { isAreaText, setAreaTextBox } from '../core/area-text';
 import { readTextLines } from '../core/text-lines';
@@ -1308,9 +1308,11 @@ export class SelectTool extends BaseTool {
       dx = conv.dx; dy = conv.dy;
     }
 
-    // Rotated elements (and groups/paths) move via the typed transform list so
-    // any existing rotate/matrix is preserved and composed correctly.
-    if (getRotation(el) !== 0 || tag === 'g' || tag === 'path') {
+    // Geometry edits pass through the element's own linear transform. Rotation
+    // alone cannot detect a vertical reflection, scale, or skew: those can report
+    // zero degrees while reversing or distorting the requested canvas movement.
+    const m = ownTransformMatrix(el);
+    if (m.a !== 1 || m.b !== 0 || m.c !== 0 || m.d !== 1 || tag === 'g' || tag === 'path') {
       nudgeTranslate(el, dx, dy);
       return;
     }
