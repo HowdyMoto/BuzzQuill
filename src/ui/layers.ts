@@ -697,8 +697,8 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
   // and a row inside a hidden/locked container reads that way too, more quietly.
   paintRowState(li, state, shape);
 
-  // Click to select. Selecting from the panel is an explicit "take me to this", so
-  // pan an off-screen target into view (frames especially can sit far off-canvas).
+  // Selection preserves the current working view, including for long/off-screen
+  // paths. Focus Selection (F / Shift+2) is the explicit navigation gesture.
   li.addEventListener('click', (e) => {
     state.activePanel = 'layers';
     if (e.shiftKey) {
@@ -718,7 +718,6 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
         const [lo, hi] = ai <= ci ? [ai, ci] : [ci, ai];
         state.selectMultiple(ids.slice(lo, hi + 1));
       }
-      state.revealShape(shape.id);
     } else if (e.metaKey || e.ctrlKey) {
       // Toggle this row in/out of the selection without disturbing the rest.
       state.toggleMultiSelect(shape.id);
@@ -726,7 +725,6 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
     } else {
       state.selectShape(shape.id);
       selectionAnchorId = shape.id;
-      state.revealShape(shape.id);
     }
   });
 
