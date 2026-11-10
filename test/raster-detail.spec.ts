@@ -51,13 +51,12 @@ test('close zoom uses native visible pixels, preserves alpha, and never saves di
   expect(result.compact).toBeLessThan(10000); expect(result.noCrop).toBe(true);
 });
 
-test('wheel zoom refreshes detail and off-screen views release it', async ({ page }) => {
+test('wheel zoom retains sufficient detail and off-screen views release it', async ({ page }) => {
   await installImage(page);
-  const before = await page.locator('#drawing-layer image').getAttribute('href');
   const box = await page.locator('#svg-canvas').boundingBox();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.wheel(0, -150);
-  await expect(page.locator('#drawing-layer image')).not.toHaveAttribute('href', before!);
+  await expect(page.locator('#drawing-layer image')).not.toHaveAttribute('href', await page.evaluate(() => (window as any).baseHref));
   await page.waitForTimeout(600);
   await page.evaluate(async () => {
     document.getElementById('svg-canvas')!.setAttribute('viewBox', '20000 20000 1000 1000');
@@ -172,4 +171,60 @@ test('EXIF-rotated JPEG detail uses the same source regions as the displayed ima
     });
     expect(pixel[channel]).toBeGreaterThan(250); expect(pixel[channel === 0 ? 2 : 0]).toBeLessThan(4);
   }
+});
+
+test('nearby pans reuse sharp pixels without decoding the source again', async ({ page }) => {
+  await installImage(page);
+  const href = await page.locator('#drawing-layer image').getAttribute('href');
+  await page.evaluate(() => {
+    const decode = window.createImageBitmap.bind(window);
+    (window as any).panDecodes = 0;
+    window.createImageBitmap = ((...args: any[]) => {
+      (window as any).panDecodes++;
+      return (decode as any)(...args);
+    }) as typeof createImageBitmap;
+  });
+  for (let i = 0; i < 5; i++) {
+    await page.evaluate(async () => {
+      const svg = document.getElementById('svg-canvas')!;
+      const box = svg.getAttribute('viewBox')!.split(/[ ,]+/).map(Number);
+      box[0] += 10;
+      svg.setAttribute('viewBox', box.join(' '));
+      (await import('/src/core/raster-assets.ts')).scheduleRasterDetail();
+    });
+    await page.waitForTimeout(350); // beyond the settled-view debounce
+  }
+  const decodes = await page.evaluate(() => (window as any).panDecodes);
+  console.log('PAN SOURCE DECODES', decodes);
+  expect(decodes).toBe(0);
+  await expect(page.locator('#drawing-layer image')).toHaveAttribute('href', href!);
+  await page.evaluate(async () => {
+    document.getElementById('svg-canvas')!.setAttribute('viewBox', '2500 0 1000 800');
+    (await import('/src/core/raster-assets.ts')).scheduleRasterDetail();
+  });
+  await expect(page.locator('#drawing-layer image')).not.toHaveAttribute('href', href!);
+  expect(await page.evaluate(() => (window as any).panDecodes)).toBeGreaterThan(0);
+});
+
+test('a view update during decode retains a still-useful result', async ({ page }) => {
+  await page.evaluate(() => {
+    const decode = window.createImageBitmap.bind(window);
+    (window as any).detailDecodes = 0;
+    window.createImageBitmap = (async (...args: any[]) => {
+      if (args.length >= 5) {
+        (window as any).detailDecodes++;
+        setTimeout(() => {
+          const svg = document.getElementById('svg-canvas')!;
+          const box = svg.getAttribute('viewBox')!.split(/[ ,]+/).map(Number); box[0] += 10;
+          svg.setAttribute('viewBox', box.join(' '));
+          (window as any).state.onChange_public();
+        }, 20);
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      return (decode as any)(...args);
+    }) as typeof createImageBitmap;
+  });
+  await installImage(page);
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as any).detailDecodes)).toBe(1);
 });
