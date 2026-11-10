@@ -765,11 +765,10 @@ export class AppState {
   getFrameBackground(id: string): string | null { return this.frameChrome.getBackground(id); }
   setFrameBackground(id: string, color: string | null, record = true): void { this.frameChrome.setBackground(id, color, record); }
 
-  /** Grid-snap parameters for the active frame (origin + per-axis spacing — a
+  /** Grid-snap parameters for the given frame (active frame by default; origin + per-axis spacing — a
    *  divisions grid can have different column/row spacing), or null when no active
-   *  frame has snapping on. Used by the select tool to quantize gestures. */
-  activeGridSnap(): { ox: number; oy: number; sx: number; sy: number } | null {
-    const id = this.activeFrameId;
+   *  frame has snapping on. Used by object and path-point gestures. */
+  activeGridSnap(id = this.activeFrameId): { ox: number; oy: number; sx: number; sy: number } | null {
     if (!id) return null;
     const ab = this.artboards.find(a => a.id === id);
     if (!ab || !ab.grid || !ab.grid.snap) return null;
@@ -1250,6 +1249,7 @@ export class AppState {
     if (this.editingPathId && (this.selectedShapeIds.length !== 1 ||
         this.selectedShapeIds[0] !== this.editingPathId ||
         !this.editingOwnerEl?.isConnected ||
+        !this.isVisibleForPointEditing(this.editingOwnerEl) ||
         this.findShapeById(this.editingPathId)?.element !== this.editingOwnerEl ||
         (this.editingSourceEl && !this.editingSourceEl.isConnected))) {
       this.exitPathEdit(false);
@@ -1537,10 +1537,18 @@ export class AppState {
 
   // ---- Node editing ----
 
+  /** A hidden layer or container cannot own an active canvas point edit. */
+  private isVisibleForPointEditing(el: Element): boolean {
+    for (let node: Element | null = el; node && node !== this.drawingLayer; node = node.parentElement) {
+      if ((node as SVGElement).style.display === 'none') return false;
+    }
+    return true;
+  }
+
   /** Begin editing a path's anchors. No-op for non-path shapes. */
   enterPathEdit(id: string): boolean {
     const shape = this.findShapeById(id);
-    if (!shape || shape.locked) return false;
+    if (!shape || shape.locked || !this.isVisibleForPointEditing(shape.element)) return false;
 
     // Wrapped vector (variable-width `data-width` / multi-stroke `data-appearance`):
     // the geometry lives on the inner SOURCE path, not the wrapper `<g>`. Edit that
