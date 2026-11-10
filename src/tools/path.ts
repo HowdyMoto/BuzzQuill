@@ -1,3 +1,4 @@
+import { snapPointToGrid } from '../core/grid-snap';
 import { POINT_MODES_ATTR, writePointModes } from '../core/path-point-modes';
 import { tokens } from '../ui/tokens';
 import { BaseTool } from './base';
@@ -47,6 +48,7 @@ export class PathTool extends BaseTool {
       }
     }
 
+    pt = this.snapToGrid(pt, e);
     this.isDragging = true;
     this.dragStart = { ...pt };
     this.removeDragHandles(); // a new point starts — drop the previous point's tangent chrome
@@ -72,6 +74,7 @@ export class PathTool extends BaseTool {
   }
 
   onMouseMove(pt: Point, e: MouseEvent): void {
+    pt = this.snapToGrid(pt, e);
     if (this.isDragging && this.currentNode && this.dragStart) {
       let dx = pt.x - this.currentNode.point.x;
       let dy = pt.y - this.currentNode.point.y;
@@ -92,6 +95,13 @@ export class PathTool extends BaseTool {
       this.drawDragHandles(); // show the tangent being pulled out, like Illustrator/Figma
     }
     if (this.nodes.length > 0) { showGestureHud(this.penGesture(), e); this.updatePreview(pt, e); }
+  }
+
+  private snapToGrid(pt: Point, e: MouseEvent): Point {
+    if (e.metaKey || e.ctrlKey) return pt;
+    const origin = this.nodes[0]?.point ?? pt;
+    const frame = [...this.state.artboards].reverse().find(ab => origin.x >= ab.x && origin.x <= ab.x + ab.width && origin.y >= ab.y && origin.y <= ab.y + ab.height);
+    return snapPointToGrid(pt, this.state.activeGridSnap(frame?.id));
   }
 
   onMouseUp(_pt: Point, _e: MouseEvent): void {
@@ -154,9 +164,9 @@ export class PathTool extends BaseTool {
       this.guidesLayer.appendChild(this.previewEl);
     }
 
-    // If currently dragging with Shift held, snap the trailing preview to nearest axis.
+    // Match the Shift constraint used when placing the next point.
     let trailingPt = currentPt;
-    if (this.isDragging && e?.shiftKey && this.dragStart && this.nodes.length > 0) {
+    if (e?.shiftKey && this.nodes.length > 0) {
       trailingPt = this.constrainToAxis(currentPt, this.nodes[this.nodes.length - 1].point);
     }
 

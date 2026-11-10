@@ -1,3 +1,4 @@
+import { snapPointToGrid } from '../core/grid-snap';
 import { createMarqueeRect } from '../ui/overlay-chrome';
 import { BaseTool } from './base';
 import { SelectTool } from './select';
@@ -31,9 +32,6 @@ export class NodeEditTool extends BaseTool {
   // Grab offset (anchor − pointer, local space) so a grid-snapped anchor drag keeps
   // the grab point under the cursor instead of teleporting the anchor to it.
   private dragGrabOffset: Point = { x: 0, y: 0 };
-  // Grid snap is only sound when the editing element's local space is a pure
-  // translation of world space (a rotated/scaled path's local grid would lie).
-  private dragSnapOk = false;
   private dirty = false;
 
   // Rubber-band node selection (coords in svg-user / viewBox space).
@@ -88,7 +86,7 @@ export class NodeEditTool extends BaseTool {
     if (h) {
       this.dragHandle = h;
       this.dragAlt = e.altKey;
-      this.dragSnapOk = this.translationOnlySpace();
+
       this.state.setInteractive(true);
       return;
     }
@@ -107,7 +105,7 @@ export class NodeEditTool extends BaseTool {
         an.type = 'smooth';
         this.dragHandle = { sp: a.sp, i: a.i, which: 'out' };
         this.dragConvert = true;
-        this.dragSnapOk = this.translationOnlySpace();
+
         this.state.setInteractive(true);
         this.state.onChange_public();
         return;
@@ -116,7 +114,7 @@ export class NodeEditTool extends BaseTool {
       else if (!session.isSelected(a.sp, a.i)) session.selectOnly(a.sp, a.i);
       this.dragAnchor = a;
       this.dragGrabOffset = an ? { x: an.x - local.x, y: an.y - local.y } : { x: 0, y: 0 };
-      this.dragSnapOk = this.translationOnlySpace();
+
       this.state.setInteractive(true);
       this.state.onChange_public();
       return;
@@ -169,8 +167,8 @@ export class NodeEditTool extends BaseTool {
       // While CONVERTING a corner (Alt held), force mirror mode — the held Alt must
       // not break the emerging tangents. Otherwise Alt = break an existing handle.
       const alt = this.dragConvert ? false : (this.dragAlt || e.altKey);
-      // Spline handles snap to the active frame's grid too (#109); ⌘/Ctrl bypasses.
-      const target = this.snapToGrid(local, pt, local, e);
+      // Spline handles snap to the owning frame's grid too (#109); ⌘/Ctrl bypasses.
+      const target = this.snapToGrid(local, e);
       session.moveHandle(sp, i, which, target.x, target.y, alt);
       this.livePreview();
       return;
@@ -179,10 +177,10 @@ export class NodeEditTool extends BaseTool {
       const an = session.anchor(this.dragAnchor);
       if (!an) return;
       // Absolute-from-grab targeting: the grabbed anchor tracks the pointer (plus the
-      // grab offset) and snaps to the active frame's grid (#109); the rest of the node
+      // grab offset) and snaps to the owning frame's grid (#109); the rest of the node
       // selection moves rigidly with it. No incremental-delta error accumulates.
       const target = this.snapToGrid(
-        { x: local.x + this.dragGrabOffset.x, y: local.y + this.dragGrabOffset.y }, pt, local, e);
+        { x: local.x + this.dragGrabOffset.x, y: local.y + this.dragGrabOffset.y }, e);
       const dx = target.x - an.x;
       const dy = target.y - an.y;
       if (dx !== 0 || dy !== 0) {
@@ -391,29 +389,17 @@ export class NodeEditTool extends BaseTool {
     return 7 / this.canvas.getZoom();
   }
 
-  /** True when the editing element's local space is world space plus a pure
-   *  translation (unit scale, no rotation/skew) — the only case where snapping
-   *  local coordinates to the world-space frame grid is geometrically sound. */
-  private translationOnlySpace(): boolean {
-    const o = this.toLocal({ x: 0, y: 0 });
-    const ux = this.toLocal({ x: 1, y: 0 });
-    const uy = this.toLocal({ x: 0, y: 1 });
-    const E = 1e-6;
-    return Math.abs(ux.x - o.x - 1) < E && Math.abs(ux.y - o.y) < E &&
-           Math.abs(uy.x - o.x) < E && Math.abs(uy.y - o.y - 1) < E;
-  }
-
-  /** Quantize a local-space target point to the active frame's grid (#109), like the
-   *  select tool's drag/resize snap: only when the frame's grid has snapping on, and
-   *  bypassed with ⌘/Ctrl. `world`/`local` are the SAME pointer position in the two
-   *  spaces — their difference is the (pure) translation between the spaces. */
-  private snapToGrid(target: Point, world: Point, local: Point, e: MouseEvent): Point {
-    if (!this.dragSnapOk || e.metaKey || e.ctrlKey) return target;
-    const grid = this.state.activeGridSnap();
-    if (!grid) return target;
-    const tx = world.x - local.x, ty = world.y - local.y;
-    const q = (v: number, o: number, s: number) => o + Math.round((v - o) / s) * s;
-    return { x: q(target.x + tx, grid.ox, grid.sx) - tx, y: q(target.y + ty, grid.oy, grid.sy) - ty };
+  /** Snap in the owning frame's world grid, then map back into editable geometry. */
+  private snapToGrid(target: Point, e: MouseEvent): Point {
+    if (e.metaKey || e.ctrlKey) return target;
+    const el = this.editingElement() as SVGGraphicsElement | null;
+    const layer = this.svgCanvas.querySelector<SVGGElement>('#drawing-layer');
+    const grid = this.state.activeGridSnap(el?.closest('[data-frame]')?.id);
+    const map = layer && el ? pointMapperBetween(layer, el) : null;
+    if (!grid || !map) return target;
+    const snapped = snapPointToGrid(map(target.x, target.y), grid);
+    const result = this.toLocal(snapped);
+    return Number.isFinite(result.x) && Number.isFinite(result.y) ? result : target;
   }
 
   /**
