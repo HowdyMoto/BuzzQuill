@@ -142,6 +142,36 @@ export class PathEditSession {
     }
   }
 
+  /** The unique directed segment between exactly two picked adjacent anchors. */
+  private selectedSegment(): [Anchor, Anchor] | null {
+    const refs = this.selectedRefs();
+    if (refs.length !== 2 || refs[0].sp !== refs[1].sp) return null;
+    const sp = this.model.subpaths[refs[0].sp];
+    if (!sp || (sp.closed && sp.anchors.length <= 2)) return null;
+    const [a, b] = refs.map(r => r.i).sort((x, y) => x - y);
+    if (!sp.anchors[a] || !sp.anchors[b]) return null;
+    if (b === a + 1) return [sp.anchors[a], sp.anchors[b]];
+    if (sp.closed && a === 0 && b === sp.anchors.length - 1) return [sp.anchors[b], sp.anchors[a]];
+    return null;
+  }
+
+  canStraightenSelectedSegment(): boolean {
+    const pair = this.selectedSegment();
+    return !!pair && (pair[0].outX !== undefined || pair[1].inX !== undefined);
+  }
+
+  /** Remove only this segment's handles; neighboring curves keep their geometry. */
+  straightenSelectedSegment(): boolean {
+    if (!this.canStraightenSelectedSegment()) return false;
+    const [start, end] = this.selectedSegment()!;
+    delete start.outX; delete start.outY;
+    delete end.inX; delete end.inY;
+    // One-sided handles must remain independent when edited later.
+    start.type = start.inX === undefined ? 'corner' : 'broken';
+    end.type = end.outX === undefined ? 'corner' : 'broken';
+    return true;
+  }
+
   /** Delete selected anchors; prunes subpaths that fall below 2 anchors. Returns true if anything changed. */
   deleteSelected(): boolean {
     const refs = this.selectedRefs();
