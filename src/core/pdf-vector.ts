@@ -16,7 +16,7 @@
  */
 
 import { fontId, bytesToBase64, type EmbeddedFont } from './embedded-fonts';
-import { escapeHtml } from '../ui/dom';
+import { escapeHtml } from './markup-escape';
 
 // --- PDF.js operator ids we care about (from pdfjs-dist build/pdf.mjs `OPS`) ---
 const OPS = {

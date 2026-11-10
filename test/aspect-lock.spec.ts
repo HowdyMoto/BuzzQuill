@@ -29,9 +29,13 @@ test('lock on: editing Width drives Height (and vice versa) by the ratio', async
   await lock.click();
   await expect(lock).toHaveClass(/active/);
 
-  await w.fill('300');                 // W→300, ratio 2 → H should be 150
+  await w.fill('300');                 // typed transform edits commit on Enter/blur
+  await w.press('Enter');
+  await w.blur();                      // W→300, ratio 2 → H should be 150
   await expect(h).toHaveValue('150');
-  await h.fill('50');                  // H→50, ratio 2 → W should be 100
+  await h.fill('50');
+  await h.press('Enter');
+  await h.blur();                      // H→50, ratio 2 → W should be 100
   await expect(w).toHaveValue('100');
 
   // The shape actually resized to the linked dimensions.

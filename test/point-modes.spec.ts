@@ -129,3 +129,34 @@ test('reversing a path carries modes with their original points', async ({ page 
   await page.keyboard.press('a'); await page.locator('[data-node-anchor="0:2"]').click();
   await expect(mode(page, 'Smooth')).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('Straighten segment preserves neighboring curves through undo and saved SVG', async ({ page }, info) => {
+  await boot(page);
+  const original = 'M100 180 C140 120 200 120 240 180 C280 240 320 240 360 180 C400 120 460 120 500 180';
+  const id = await page.evaluate(d => {
+    const s = (window as any).state;
+    const id = s.selectedShapeId;
+    s.exitPathEdit(); s.findShapeById(id).element.setAttribute('d', d);
+    s.saveHistory(); s.enterPathEdit(id); s.onChange_public(); return id;
+  }, original);
+  const button = page.getByRole('button', { name: 'Straighten segment', exact: true });
+  await page.locator('[data-node-anchor="0:1"]').click();
+  await expect(button).toBeDisabled();
+  await page.locator('[data-node-anchor="0:2"]').click({ modifiers: ['Shift'] });
+  await expect(button).toBeEnabled();
+  await button.click();
+  const expected = 'M 100 180 C 140 120 200 120 240 180 L 360 180 C 400 120 460 120 500 180';
+  await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', expected);
+  await expect(button).toBeDisabled();
+  await page.locator('#prop-node-row').screenshot({ path: info.outputPath('straighten-segment.png') });
+  await page.evaluate(() => (window as any).state.undo());
+  await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', original);
+  await page.evaluate(() => (window as any).state.redo());
+  await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', expected);
+  await page.evaluate(async id => {
+    const s = (window as any).state;
+    const { serializeDocumentSVG, loadDocumentSVG } = await import('/src/core/document-codec.ts');
+    const saved = serializeDocumentSVG(s); loadDocumentSVG(s, saved); s.selectShape(id);
+  }, id);
+  await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', expected);
+});

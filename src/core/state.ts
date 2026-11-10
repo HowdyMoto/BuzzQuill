@@ -191,6 +191,8 @@ export class AppState {
   /** Lets a tool ask the app to switch tools (e.g. a draw tool returns to Select
    *  after placing one shape). Wired by main.ts to setTool; null in headless use. */
   requestTool: ((tool: ToolName) => void) | null = null;
+  /** Presentation feedback for an internal-only large raster copy. */
+  reportLargeCopy: ((message: string) => void) | null = null;
 
   /** Set when point-editing was entered by DOUBLE-CLICKING in the Selection tool
    *  (Figma-style — no separate tool). Records the tool to hop back to when the
@@ -413,6 +415,7 @@ export class AppState {
       ensureDefs: () => this.ensureDefs(),
       saveHistory: () => this.saveHistory(),
       onChange: () => this.notify(),
+      reportLargeCopy: message => this.reportLargeCopy?.(message),
     };
     this.clipboardMgr = new ClipboardManager(clipboardHost);
     this.linkedFiles = new LinkedFileManager({
