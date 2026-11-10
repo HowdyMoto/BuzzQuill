@@ -168,8 +168,14 @@ export function assetStats() {
 
 /** Cached detail is per visible image instance, never a full-resolution document-wide bitmap. */
 const DETAIL_PIXELS = 32 * 1024 * 1024;
-interface DetailPlan { id: string; x: number; y: number; w: number; h: number; width: number; height: number; key: string; }
-const details = new Map<Element, { id: string; url: string; key: string; pixels: number }>();
+interface DetailPlan { id: string; x: number; y: number; w: number; h: number; width: number; height: number; scale: number; key: string; }
+const details = new Map<Element, { id: string; url: string; key: string; pixels: number; plan: DetailPlan }>();
+/** Reuse native/sufficient-density pixels while the visible source region stays inside them. */
+function coversDetail(cached: DetailPlan, needed: DetailPlan): boolean {
+  return cached.id === needed.id && cached.scale >= needed.scale &&
+    cached.x <= needed.x && cached.y <= needed.y &&
+    cached.x + cached.w >= needed.x + needed.w && cached.y + cached.h >= needed.y + needed.h;
+}
 let detailTimer: number | undefined;
 let detailGeneration = 0;
 let detailWorking = false;
@@ -184,7 +190,7 @@ export function scheduleRasterDetail(): void {
   detailTimer = window.setTimeout(() => { void refreshDetail(); }, 180);
 }
 /** Map the viewport through the image's full transform, including aspect-ratio fitting. */
-function detailPlan(el: SVGImageElement, asset: LiveAsset, viewport: DOMRect): DetailPlan | null {
+function detailPlan(el: SVGImageElement, asset: LiveAsset, viewport: DOMRect, margin = 24): DetailPlan | null {
   if (asset.previewPending || !asset.width || !asset.height) return null;
   const box = el.getBoundingClientRect();
   if (box.right <= viewport.left || box.left >= viewport.right || box.bottom <= viewport.top || box.top >= viewport.bottom) return null;
@@ -207,8 +213,8 @@ function detailPlan(el: SVGImageElement, asset: LiveAsset, viewport: DOMRect): D
   if (!Number.isFinite(density) || density <= 0 || Math.max(asset.width, asset.height) * density <= PREVIEW_EDGE) return null;
   const inverse = pixelsToScreen.inverse();
   // A little overscan avoids showing a soft edge during short pans.
-  const corners = [[viewport.left-24, viewport.top-24], [viewport.right+24, viewport.top-24],
-    [viewport.left-24, viewport.bottom+24], [viewport.right+24, viewport.bottom+24]]
+  const corners = [[viewport.left-margin, viewport.top-margin], [viewport.right+margin, viewport.top-margin],
+    [viewport.left-margin, viewport.bottom+margin], [viewport.right+margin, viewport.bottom+margin]]
     .map(([px, py]) => new DOMPoint(px, py).matrixTransform(inverse));
   const left = Math.max(0, Math.floor(Math.min(...corners.map(p => p.x))));
   const top = Math.max(0, Math.floor(Math.min(...corners.map(p => p.y))));
@@ -219,7 +225,7 @@ function detailPlan(el: SVGImageElement, asset: LiveAsset, viewport: DOMRect): D
   // Never enlarge source pixels, and never cap close-up detail at an arbitrary edge length.
   const width = Math.max(1, Math.ceil(cw * Math.min(1, density)));
   const height = Math.max(1, Math.ceil(ch * Math.min(1, density)));
-  return { id: asset.id, x: left, y: top, w: cw, h: ch, width, height,
+  return { id: asset.id, x: left, y: top, w: cw, h: ch, width, height, scale: Math.min(1, density),
     key: [asset.id, left, top, cw, ch, width, height].join(':') };
 }
 function dataUrl(blob: Blob): Promise<string> {
@@ -257,7 +263,11 @@ async function refreshDetail(): Promise<void> {
   const wanted = new Map<Element, DetailPlan>(); let remaining = DETAIL_PIXELS;
   for (const el of root.querySelectorAll<SVGImageElement>(`image[${ASSET_ATTR}]`)) {
     const asset = assets.get(el.getAttribute(ASSET_ATTR)!); if (!asset) continue;
-    const plan = detailPlan(el, asset, viewport); if (!plan) continue;
+    const needed = detailPlan(el, asset, viewport); if (!needed) continue;
+    const cached = details.get(el)?.plan;
+    // Keep a modest pan margin in the existing output budget, never a full-source cache.
+    let plan = cached && coversDetail(cached, needed) ? cached : detailPlan(el, asset, viewport, 256)!;
+    if (plan.width * plan.height > remaining) plan = needed;
     const pixels = plan.width * plan.height;
     if (pixels > remaining) continue;
     remaining -= pixels; wanted.set(el, plan);
@@ -280,9 +290,15 @@ async function refreshDetail(): Promise<void> {
       }
       try {
         const blob = await detailSvg(asset, plan);
-        if (generation !== detailGeneration || !el.isConnected || assets.get(plan.id) !== asset) break;
+        if (!root.contains(el) || assets.get(plan.id) !== asset || el.getAttribute(ASSET_ATTR) !== plan.id) continue;
+        // A pan or unrelated settled edit must not discard expensive work that is
+        // still sharp enough and covers the latest view. Obsolete regions stay unpublished.
+        if (generation !== detailGeneration) {
+          const current = detailPlan(el as SVGImageElement, asset, document.getElementById('canvas-area')!.getBoundingClientRect());
+          if (!current || !coversDetail(plan, current)) continue;
+        }
         const previous = details.get(el);
-        details.set(el, { id: plan.id, url: URL.createObjectURL(blob), key: plan.key, pixels: plan.width * plan.height });
+        details.set(el, { id: plan.id, url: URL.createObjectURL(blob), key: plan.key, pixels: plan.width * plan.height, plan });
         bindAssets(el);
         if (previous) URL.revokeObjectURL(previous.url);
       } catch { /* The base preview remains available if the source cannot decode. */ }
