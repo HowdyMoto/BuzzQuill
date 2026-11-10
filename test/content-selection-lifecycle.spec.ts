@@ -193,6 +193,27 @@ test('rotation and keyboard nudge work immediately after append while A stays se
   expect(await page.evaluate(() => (window as any).state.currentTool)).toBe('directSelect');
 });
 
+for (const target of ['path', 'parent'] as const) {
+  test(`hiding the edited ${target} removes point editing until visible again`, async ({ page }) => {
+    const id = await boot(page);
+    await expect(page.locator('[data-node-anchor]')).not.toHaveCount(0);
+    const hiddenId = target === 'path' ? id : await page.evaluate(id => document.getElementById(id)!.parentElement!.id, id);
+    const eye = page.locator(`li[data-id="${hiddenId}"] .layer-vis`);
+    await eye.click();
+    await expect(page.locator('[data-node-overlay]')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).state.editingPathId)).toBeNull();
+    expect(await page.evaluate(id => (window as any).state.enterPathEdit(id), id)).toBe(false);
+    await eye.click();
+    await page.keyboard.press('a');
+    await expect(page.locator('[data-node-anchor]')).not.toHaveCount(0);
+    await page.evaluate(id => (window as any).state.toggleVisibility(id), hiddenId);
+    await expect(page.locator('[data-node-overlay]')).toHaveCount(0);
+    await page.evaluate(() => (window as any).state.undo());
+    await page.keyboard.press('a');
+    await expect(page.locator('[data-node-anchor]')).not.toHaveCount(0);
+  });
+}
+
 test('layer selection preserves the working view until Focus Selection is requested', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window as any).docs);
