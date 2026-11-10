@@ -8,7 +8,8 @@
  * style), and a selected path gave no sign of that — the one thing most people
  * want to do with a path was the one thing the bar didn't offer.
  *
- * It floats over a SINGLE selected path-like shape (the Pathfinder popover owns
+ * During point editing it shows segment actions over the picked anchors. Otherwise
+ * it floats over a SINGLE selected path-like shape (the Pathfinder popover owns
  * 2+ selections, so the two never overlap). Presentation + wiring only — the
  * geometry lives in strokes-panel (stack edits) and state/pathfinder (outline).
  */
@@ -39,12 +40,21 @@ const ICON_REVERSE = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none
 
 interface Action {
   key: string; icon: string; label: string; title: string;
+  points?: boolean;
+  enabled?: (s: AppState) => boolean;
   run: (s: AppState) => void;
   /** Shown only when this holds for the selected shape (default: always). */
   when?: (s: AppState, shape: ShapeData) => boolean;
 }
 
 const ACTIONS: Action[] = [
+  {
+    key: 'straighten-segment', points: true,
+    icon: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 10h10"/><rect x="1" y="8" width="4" height="4"/><rect x="15" y="8" width="4" height="4"/></svg>',
+    label: 'Straighten segment', title: 'Straighten between two adjacent points, preserving the curves on either side.',
+    enabled: s => !!s.pathEdit?.canStraightenSelectedSegment(),
+    run: s => { if (s.pathEdit?.straightenSelectedSegment()) s.commitPathEdit(); },
+  },
   {
     key: 'edit-points', icon: ICON_POINTS, label: 'Edit Points',
     title: 'Edit the points of this path — or double-click it, or press A.',
@@ -124,22 +134,41 @@ export function updatePathActionsPopover(state: AppState): void {
   if (!pop) return;
 
   const only = state.selectedShapeIds.length === 1 ? state.getSelectedShape() : null;
+  const editingPoints = state.currentTool === 'directSelect' && !!state.editingPathId && !!state.pathEdit?.selected.size;
   // Inside an entered group too: the bar anchors to one shape, and a path inside
   // a group is exactly where imported artwork keeps its paths.
-  const show = state.currentTool === 'select'
+  const show = (editingPoints || (state.currentTool === 'select' && !state.editingPathId))
     && !state.interactive
-    && !state.editingPathId
     && !!only && PATH_TYPES.has(only.type);
   if (!show || !only) { hideContextPopover(pop, state); return; }
 
   for (const a of ACTIONS) {
-    const btn = pop.querySelector<HTMLElement>(`[data-path-action="${a.key}"]`);
-    if (btn) btn.style.display = !a.when || a.when(state, only) ? '' : 'none';
+    const btn = pop.querySelector<HTMLButtonElement>(`[data-path-action="${a.key}"]`);
+    if (btn) {
+      btn.style.display = !!a.points === editingPoints && (!a.when || a.when(state, only)) ? '' : 'none';
+      btn.disabled = !!a.enabled && !a.enabled(state);
+    }
   }
   const sep = pop.querySelector<HTMLElement>('[data-pa-sep]');
-  if (sep) sep.style.display = (state.canNodeEdit(only.id) || hasDirection(only)) && hasStrokeStack(state, only) ? '' : 'none';
+  if (sep) sep.style.display = !editingPoints && (state.canNodeEdit(only.id) || hasDirection(only)) && hasStrokeStack(state, only) ? '' : 'none';
 
-  const rc = selectionUnionRect(state);
+  const rc = editingPoints ? selectedPointRect(state) : selectionUnionRect(state);
   if (!rc) { hideContextPopover(pop, state); return; }
-  placeContextPopover(pop, rc, state.selectedShapeIds.join(',')); // consistent: above the selection, like all context popovers
+  placeContextPopover(pop, rc, `${state.selectedShapeIds.join(',')}:${editingPoints ? 'points' : 'shape'}`);
+}
+
+/** Anchor point actions to the picked points, not a potentially very long path. */
+function selectedPointRect(state: AppState): DOMRect | null {
+  const session = state.pathEdit;
+  const matrix = (state.editingGeometryEl() as SVGGraphicsElement | null)?.getScreenCTM();
+  if (!session || !matrix) return null;
+  let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const ref of session.selectedRefs()) {
+    const a = session.anchor(ref);
+    if (!a) continue;
+    const p = new DOMPoint(a.x, a.y).matrixTransform(matrix);
+    x = Math.min(x, p.x); y = Math.min(y, p.y);
+    right = Math.max(right, p.x); bottom = Math.max(bottom, p.y);
+  }
+  return Number.isFinite(x) ? new DOMRect(x, y, right - x, bottom - y) : null;
 }
