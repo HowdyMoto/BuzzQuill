@@ -213,3 +213,27 @@ for (const target of ['path', 'parent'] as const) {
     await expect(page.locator('[data-node-anchor]')).not.toHaveCount(0);
   });
 }
+
+test('layer selection preserves the working view until Focus Selection is requested', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window as any).docs);
+  await page.evaluate(() => {
+    const s = (window as any).state;
+    s.importSVGContent('<svg xmlns="http://www.w3.org/2000/svg"><path id="long-path" d="M 200 200 L 20000 300" stroke="black"/><path id="far-path" d="M 30000 100 L 31000 200" stroke="red"/></svg>');
+    s.selectShape(null);
+  });
+  const canvas = page.locator('#svg-canvas');
+  await canvas.hover();
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -500);
+  await page.keyboard.up('Control');
+  const before = await canvas.getAttribute('viewBox');
+  await page.locator('li[data-id="long-path"] .layer-icon').click();
+  expect(await page.evaluate(() => (window as any).state.selectedShapeId)).toBe('long-path');
+  expect(await canvas.getAttribute('viewBox')).toBe(before);
+  await page.locator('li[data-id="far-path"] .layer-icon').click({ modifiers: ['Shift'] });
+  expect(await page.evaluate(() => (window as any).state.selectedShapeIds.length)).toBe(2);
+  expect(await canvas.getAttribute('viewBox')).toBe(before);
+  await page.keyboard.press('f');
+  expect(await canvas.getAttribute('viewBox')).not.toBe(before);
+});
