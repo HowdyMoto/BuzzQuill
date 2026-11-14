@@ -318,6 +318,15 @@ export const COMMANDS: Command[] = [
     // Ends within ~2 screen pixels merge into one point; further apart, a straight segment joins them.
     run: (c) => { if (!c.state.joinPaths(2 / c.canvas.getZoom())) showToast('Nothing to join — select one or two open paths, or two end points.'); },
   },
+  { id: 'path.break-segment', label: 'Break segment', kind: 'action',
+    enabled: (c) => !!c.state.editingPathId && !!c.state.pathEdit?.canBreakSelectedSegment(),
+    run: (c) => { if (c.state.pathEdit?.breakSelectedSegment()) c.state.commitPathEdit(); } },
+  { id: 'path.extract-segment', label: 'Extract segment as new path', kind: 'action',
+    enabled: (c) => c.state.canExtractSelectedSegment(),
+    run: (c) => c.state.extractSelectedSegment() },
+  { id: 'path.straighten-segment', label: 'Straighten segment', kind: 'action',
+    enabled: (c) => !!c.state.editingPathId && !!c.state.pathEdit?.canStraightenSelectedSegment(),
+    run: (c) => { if (c.state.pathEdit?.straightenSelectedSegment()) c.state.commitPathEdit(); } },
   // Which way a path runs is invisible but is all another app has to go on, so this
   // plays the new direction along the path rather than appearing to do nothing.
   { id: 'path.reverse', label: 'Reverse Path Direction', kind: 'action', accel: 'Mod+Alt+R', enabled: (c) => c.state.canReversePaths(), run: (c) => reverseSelectionWithFlourish(c.state) },
@@ -472,7 +481,7 @@ export const MENU_BAR: MenuDef[] = [
   ] },
   { title: 'Path', items: [
     'path.unite', 'path.subtract', 'path.intersect', 'path.exclude', 'path.divide', '---',
-    'path.join', 'path.reverse', 'path.round-corners', 'path.smooth', '---',
+    'path.join', 'path.break-segment', 'path.extract-segment', 'path.reverse', 'path.round-corners', 'path.smooth', '---',
     'path.outline-stroke', 'path.outline-text', 'path.offset', 'path.type-on-path', '---',
     'path.trace-image', '---',
     'path.flatten',

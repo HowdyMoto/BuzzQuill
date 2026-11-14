@@ -160,6 +160,41 @@ export class PathEditSession {
     return !!pair && (pair[0].outX !== undefined || pair[1].inX !== undefined);
   }
 
+  canBreakSelectedSegment(): boolean {
+    const refs = this.selectedRefs();
+    return !!this.selectedSegment() && !!this.model.subpaths[refs[0].sp].closed;
+  }
+
+  /** Copy the edge before opening the original loop; endpoint handles stay local. */
+  extractSelectedSegment(): PathModel | null {
+    if (!this.canBreakSelectedSegment()) return null;
+    const [start, end] = this.selectedSegment()!.map(a => ({ ...a }));
+    delete start.inX; delete start.inY;
+    delete end.outX; delete end.outY;
+    start.type = start.outX === undefined ? 'corner' : 'broken';
+    end.type = end.inX === undefined ? 'corner' : 'broken';
+    this.breakSelectedSegment();
+    return { subpaths: [{ anchors: [start, end], closed: false }] };
+  }
+
+  /** Open a loop by removing its selected edge, retaining both endpoint anchors. */
+  breakSelectedSegment(): boolean {
+    if (!this.canBreakSelectedSegment()) return false;
+    const [start, end] = this.selectedSegment()!;
+    const spIndex = this.selectedRefs()[0].sp;
+    const sp = this.model.subpaths[spIndex];
+    const endIndex = sp.anchors.indexOf(end);
+    // Start after the removed edge and follow the original direction to its start.
+    sp.anchors = [...sp.anchors.slice(endIndex), ...sp.anchors.slice(0, endIndex)];
+    sp.closed = false;
+    delete start.outX; delete start.outY;
+    delete end.inX; delete end.inY;
+    start.type = start.inX === undefined ? 'corner' : 'broken';
+    end.type = end.outX === undefined ? 'corner' : 'broken';
+    this.selected = new Set([key(spIndex, 0), key(spIndex, sp.anchors.length - 1)]);
+    return true;
+  }
+
   /** Remove only this segment's handles; neighboring curves keep their geometry. */
   straightenSelectedSegment(): boolean {
     if (!this.canStraightenSelectedSegment()) return false;

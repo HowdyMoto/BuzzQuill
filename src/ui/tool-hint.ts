@@ -177,6 +177,13 @@ function nodeHints(s: AppState): HintChip[] {
   const joinable = s.canJoinPaths();
   const openRuns = session.model.subpaths.filter((sp) => !sp.closed && sp.anchors.length >= 2).length;
   const done = chip('Esc', 'done');
+  if (session.canStraightenSelectedSegment() || session.canBreakSelectedSegment()) {
+    const actions: HintChip[] = [];
+    if (session.canBreakSelectedSegment()) actions.push(chip('', 'Break segment', 'path.break-segment'));
+    if (s.canExtractSelectedSegment()) actions.push(chip('', 'Extract segment as new path', 'path.extract-segment'));
+    if (session.canStraightenSelectedSegment()) actions.push(chip('', 'Straighten segment', 'path.straighten-segment'));
+    return [...actions, chip('Drag', 'move'), chip('Del', 'remove'), done];
+  }
   if (refs.length === 0) {
     const out = [chip('Click', 'select a point'), chip('Double-click', 'add a point'), chip(`${ALT}+drag`, 'pull a curve')];
     if (joinable) out.push(chip(JOIN, 'close path', 'path.join'));
@@ -276,7 +283,7 @@ function chipEl(key: string, label: string, command?: string): HTMLElement {
   if (command) {
     const btn = el as HTMLButtonElement;
     btn.type = 'button';
-    btn.setAttribute('aria-label', `${label} (${key})`);
+    btn.setAttribute('aria-label', key ? `${label} (${key})` : label);
     btn.addEventListener('click', () => runCommandById?.(command));
   } else {
     el.setAttribute('aria-hidden', 'true'); // visual chrome; the menus carry the same facts
@@ -286,7 +293,8 @@ function chipEl(key: string, label: string, command?: string): HTMLElement {
   const text = document.createElement('span');
   text.className = 'gesture-hud-label';
   text.textContent = label;
-  el.append(kbd, text);
+  if (key) el.append(kbd);
+  el.append(text);
   return el;
 }
 
