@@ -130,7 +130,8 @@ test('reversing a path carries modes with their original points', async ({ page 
   await expect(mode(page, 'Smooth')).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('Straighten segment preserves neighboring curves through undo and saved SVG', async ({ page }, info) => {
+for (const surface of ['#prop-node-row', '#path-actions-popover', '#tool-hint']) {
+test(`Straighten segment in ${surface} preserves neighboring curves through undo and saved SVG`, async ({ page }, info) => {
   await boot(page);
   const original = 'M100 180 C140 120 200 120 240 180 C280 240 320 240 360 180 C400 120 460 120 500 180';
   const id = await page.evaluate(d => {
@@ -139,9 +140,10 @@ test('Straighten segment preserves neighboring curves through undo and saved SVG
     s.exitPathEdit(); s.findShapeById(id).element.setAttribute('d', d);
     s.saveHistory(); s.enterPathEdit(id); s.onChange_public(); return id;
   }, original);
-  const button = page.locator('#tool-hint').getByRole('button', { name: 'Straighten segment', exact: true });
+  const button = page.locator(surface).getByRole('button', { name: 'Straighten segment', exact: true });
   await page.locator('[data-node-anchor="0:1"]').click();
-  await expect(button).toHaveCount(0);
+  if (surface === '#tool-hint') await expect(button).toHaveCount(0);
+  else await expect(button).toBeDisabled();
   await page.locator('[data-node-anchor="0:2"]').click({ modifiers: ['Shift'] });
   await expect(button).toBeEnabled();
   const strip = await page.locator('#tool-hint').boundingBox();
@@ -151,8 +153,9 @@ test('Straighten segment preserves neighboring curves through undo and saved SVG
   await button.click();
   const expected = 'M 100 180 C 140 120 200 120 240 180 L 360 180 C 400 120 460 120 500 180';
   await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', expected);
-  await expect(button).toHaveCount(0);
-  await page.locator('#prop-node-row').screenshot({ path: info.outputPath('straighten-segment.png') });
+  if (surface === '#tool-hint') await expect(button).toHaveCount(0);
+  else await expect(button).toBeDisabled();
+  await page.locator(surface).screenshot({ path: info.outputPath('straighten-segment.png') });
   await page.evaluate(() => (window as any).state.undo());
   await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', original);
   await page.evaluate(() => (window as any).state.redo());
@@ -164,3 +167,4 @@ test('Straighten segment preserves neighboring curves through undo and saved SVG
   }, id);
   await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('d', expected);
 });
+}
