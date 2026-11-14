@@ -4,6 +4,7 @@ import { POINT_MODES_ATTR, writePointModes } from './path-point-modes';
 import type { ToolName, ShapeData, HistoryEntry, ShapeStyle, Artboard, SymbolDef, GradientDef, GradientStop, PatternDef, ObjectShadow, AppearanceLayer, FrameGrid, Point, ExportTarget } from './types';
 import { sanitizeSvgMarkup } from './svg-sanitize';
 import { PathEditSession } from './path-edit';
+import { serializePath } from './path-model';
 import { History, type HistorySnapshot } from './history';
 import { PaintRegistry } from './paint-registry';
 import { ClipboardManager, type ClipboardHost } from './clipboard';
@@ -1684,6 +1685,33 @@ export class AppState {
       this.requestTool?.(back);
     }
     if (notify) this.notify();
+  }
+
+  /** Extract a selected loop edge into a sibling, preserving the owner's appearance. */
+  canExtractSelectedSegment(): boolean {
+    return !!this.editingPathId && !this.maskEditId && !!this.pathEdit?.canBreakSelectedSegment();
+  }
+
+  extractSelectedSegment(): void {
+    if (!this.canExtractSelectedSegment()) return;
+    const owner = this.findShapeById(this.editingPathId!)!.element;
+    const clone = owner.cloneNode(true) as SVGElement;
+    const source = (clone.querySelector(':scope > [data-width-src], :scope > [data-ap-src]') ?? clone) as SVGElement;
+    const extracted = this.pathEdit!.extractSelectedSegment()!;
+    source.setAttribute('d', serializePath(extracted));
+    writePointModes(source, extracted);
+    clone.id = this.nextId();
+    this.reIdGroupChildren(clone);
+    clone.setAttribute('data-name', 'Extracted segment');
+    owner.after(clone);
+    if (clone.hasAttribute('data-width')) this.widthMgr.refresh(clone);
+    if (clone.hasAttribute('data-appearance')) this.appearanceMgr.refresh(clone);
+    this.applyEditGeometry(this.pathEdit!.commit());
+    this.exitPathEdit(false);
+    this.rebuildShapesFromDOM();
+    this.selectedShapeIds = [clone.id];
+    this.saveHistory();
+    this.notify();
   }
 
   /** Write the live model back to the element's `d`. `record` saves an undo step. */
