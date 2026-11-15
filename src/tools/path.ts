@@ -183,7 +183,8 @@ export class PathTool extends BaseTool {
     const id = this.state.nextId();
     el.id = id;
     el.setAttribute('d', this.buildPathD(this.nodes) + (this.closed ? ' Z' : ''));
-    el.setAttribute('fill', this.state.fillNone ? 'none' : this.state.defaultStyle.fill);
+    // Pen paths start unfilled, including closed loops. Fill can be added later.
+    el.setAttribute('fill', 'none');
     el.setAttribute('stroke', this.state.strokeNone ? 'none' : this.state.defaultStyle.stroke);
     el.setAttribute('stroke-width', String(this.state.defaultStyle.strokeWidth));
     if (this.state.defaultStyle.opacity !== 1) el.setAttribute('opacity', String(this.state.defaultStyle.opacity));
@@ -193,7 +194,7 @@ export class PathTool extends BaseTool {
 
     this.state.addShape({
       id, type: 'path', element: el, name,
-      style: { ...this.state.defaultStyle, fill: this.state.fillNone ? 'none' : this.state.defaultStyle.fill, stroke: this.state.strokeNone ? 'none' : this.state.defaultStyle.stroke },
+      style: { ...this.state.defaultStyle, fill: 'none', stroke: this.state.strokeNone ? 'none' : this.state.defaultStyle.stroke },
       visible: true, locked: false,
     });
     this.nodes = [];

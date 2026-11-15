@@ -242,6 +242,17 @@ test('the pen offers to close only once three points could enclose something', a
   await expect.poll(() => tool(page)).toBe('select');
   const d = await page.evaluate(() => (window as unknown as { state: AnyState }).state.getSelectedShape()?.element.getAttribute('d') ?? '');
   expect(d.trim().endsWith('Z')).toBe(true);
+  const pathFill = () => page.evaluate(() => {
+    const shape = (window as unknown as { state: AnyState }).state.getSelectedShape();
+    return [shape.element.getAttribute('fill'), shape.style.fill];
+  });
+  expect(await pathFill()).toEqual(['none', 'none']);
+  await page.click('[data-tool="pen"]');
+  await page.mouse.click(box.x + 440, box.y + 400);
+  await page.mouse.click(box.x + 560, box.y + 440);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => tool(page)).toBe('select');
+  expect(await pathFill()).toEqual(['none', 'none']);
   expect(errors).toEqual([]);
 });
 
@@ -287,14 +298,15 @@ test('Shape Builder with one shape says what it needs; with two it says what to 
   expect(errors).toEqual([]);
 });
 
-test('View ▸ Show Tool Hints switches the strip off, and it stays off', async ({ page }) => {
+test('View ▸ Show Tool Hints hides instructions but keeps actions available after reload', async ({ page }) => {
   const errors = await boot(page);
   const [id] = await add(page, OPEN_PATH);
   await select(page, [id]);
   await expect.poll(() => hint(page)).toContain('edit points');
   await page.getByRole('menuitem', { name: 'View', exact: true }).click();
   await page.getByRole('menuitemcheckbox', { name: /Show Tool Hints/ }).click();
-  await expect(page.locator('#tool-hint')).toBeHidden();
+  await expect(page.locator('#tool-hint').getByRole('button', { name: /close path/ })).toBeVisible();
+  expect(await hint(page)).not.toContain('edit points');
   // Off means off: a drag shows no gesture chips either.
   const box = (await page.locator('#svg-canvas').boundingBox())!;
   await page.click('[data-tool="rect"]');
@@ -309,9 +321,30 @@ test('View ▸ Show Tool Hints switches the strip off, and it stays off', async 
   const [id2] = await add(page, OPEN_PATH);
   await select(page, [id2]);
   await expect(page.locator('#path-actions-popover')).toBeVisible(); // the bar is not a hint
-  await expect(page.locator('#tool-hint')).toBeHidden();
+  await expect(page.locator('#tool-hint').getByRole('button', { name: /close path/ })).toBeVisible();
+  expect(await hint(page)).not.toContain('edit points');
   await page.getByRole('menuitem', { name: 'View', exact: true }).click();
   await page.getByRole('menuitemcheckbox', { name: /Show Tool Hints/ }).click();
   await expect.poll(() => hint(page)).toContain('edit points');
   expect(errors).toEqual([]);
+});
+
+test('contextual actions keep focus through redraws and respect reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page);
+  const [id] = await add(page, OPEN_PATH);
+  await select(page, [id]);
+  const action = page.locator('#tool-hint').getByRole('button', { name: /close path/ });
+  await action.focus();
+  await page.evaluate(() => (window as any).state.onChange_public());
+  await expect(action).toBeFocused();
+  await expect(action).not.toHaveClass(/fx-action-reveal/);
+  // Changing only the instructional chips also preserves the live action node.
+  await page.evaluate(async () => {
+    const { setHintsEnabled } = await import('/src/ui/hint-prefs.ts');
+    setHintsEnabled(false);
+  });
+  await expect(action).toBeFocused();
+  await action.press('Enter');
+  await expect.poll(() => dOf(page, id)).toMatch(/[zZ]/);
 });

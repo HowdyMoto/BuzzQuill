@@ -13,6 +13,8 @@ const PULSE_SELECTOR = [
   '.align-buttons button',
   '.pathfinder-buttons button',
   '.pathfinder-popover button',
+  '.path-actions-popover button',
+  '.point-mode',
   '.swatch-swap',
   '.swatch-default',
   '.width-preset',
@@ -49,6 +51,9 @@ function playOnce(el: HTMLElement, cls: string): void {
 
 /** Replay the accent pulse on an element. */
 export function pulse(el: HTMLElement): void { playOnce(el, 'fx-pulse'); }
+
+/** A newly available action gets one small lift; existing controls stay still. */
+export function revealAction(el: HTMLElement): void { playOnce(el, 'fx-action-reveal'); }
 
 let shapePulseStyles = false;
 function ensureShapePulseStyles(): void {

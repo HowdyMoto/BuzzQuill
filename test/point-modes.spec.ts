@@ -130,7 +130,7 @@ test('reversing a path carries modes with their original points', async ({ page 
   await expect(mode(page, 'Smooth')).toHaveAttribute('aria-pressed', 'true');
 });
 
-for (const surface of ['#prop-node-row', '#path-actions-popover', '#tool-hint']) {
+for (const surface of ['#prop-node-row', '#tool-hint']) {
 test(`Straighten segment in ${surface} preserves neighboring curves through undo and saved SVG`, async ({ page }, info) => {
   await boot(page);
   const original = 'M100 180 C140 120 200 120 240 180 C280 240 320 240 360 180 C400 120 460 120 500 180';
@@ -142,9 +142,11 @@ test(`Straighten segment in ${surface} preserves neighboring curves through undo
   }, original);
   const button = page.locator(surface).getByRole('button', { name: 'Straighten segment', exact: true });
   await page.locator('[data-node-anchor="0:1"]').click();
+  await expect(page.locator('#path-actions-popover')).toBeHidden();
   if (surface === '#tool-hint') await expect(button).toHaveCount(0);
   else await expect(button).toBeDisabled();
   await page.locator('[data-node-anchor="0:2"]').click({ modifiers: ['Shift'] });
+  await expect(page.locator('#path-actions-popover')).toBeHidden();
   await expect(button).toBeEnabled();
   const strip = await page.locator('#tool-hint').boundingBox();
   const canvas = await page.locator('#canvas-area').boundingBox();
