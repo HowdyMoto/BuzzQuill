@@ -433,25 +433,16 @@ export class LayerManager {
     this.host.onChange();
   }
 
-  /** Create a new empty group ("layer") at the top of the stack. */
+  /** Create a new empty group at the top of the stack without grouping the selection. */
   addEmptyGroup(): void {
     const gEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     const id = this.host.nextId();
     gEl.id = id;
-    const name = `Layer ${id.replace('shape-', '#')}`;
+    const name = `Group ${id.replace('shape-', '#')}`;
     gEl.setAttribute('data-name', name);
     this.host.getDrawingLayer().appendChild(gEl);
 
-    this.host.getShapes().push({
-      id,
-      type: 'group',
-      element: gEl,
-      name,
-      style: { fill: 'none', stroke: 'none', strokeWidth: 0, opacity: 1 },
-      visible: true,
-      locked: false,
-      children: [],
-    });
+    this.host.rebuild();
     this.host.setSelection([id]);
     this.host.saveHistory();
     this.host.onChange();

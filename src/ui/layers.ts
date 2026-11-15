@@ -753,6 +753,7 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
     state.activePanel = 'layers';
     if (!state.selectedShapeIds.includes(shape.id)) state.selectShape(shape.id);
     const prefix: ContextMenuItem[] = [
+      { label: 'New Group', action: () => state.addEmptyGroup() },
       { label: 'Rename', action: () => renameShape(shape.id) },
       ...(shape.type === 'frame' ? [{
         label: 'Export frame',
@@ -845,10 +846,10 @@ function buildRow(row: LayerRow, index: number): HTMLLIElement {
 
 
 /** The two "create a top-level container" actions shared by the + button and the
- *  panel's empty-area right-click menu: an ordinary layer (empty group) or a frame. */
+ *  panel's empty-area right-click menu: an empty group or a frame. */
 function addContainerItems(state: AppState): ContextMenuItem[] {
   return [
-    { label: 'Add Layer', action: () => state.addEmptyGroup() },
+    { label: 'New Group', action: () => state.addEmptyGroup() },
     { label: 'Add Frame', action: () => addFrameFromPanel(state) },
   ];
 }
