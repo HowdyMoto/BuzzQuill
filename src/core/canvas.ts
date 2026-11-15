@@ -1,5 +1,8 @@
 import type { Point } from './types';
 
+const MIN_ZOOM = 0.05;
+const MAX_ZOOM = 256;
+
 /** Pinch-zoom damping: exponent applied to each pinch step so pinch zooms at ~1/9
  *  the sensitivity of the scroll-wheel zoom (zoom is multiplicative, so 1/9 the
  *  speed = the ninth root of the per-event step). */
@@ -125,7 +128,7 @@ export class CanvasController {
   }
 
   setZoom(newZoom: number, screenCenter?: Point): void {
-    newZoom = Math.max(0.05, Math.min(64, newZoom));
+    newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
 
     if (screenCenter) {
       const svgPt = this.screenToSVG(screenCenter.x, screenCenter.y);
@@ -162,7 +165,7 @@ export class CanvasController {
     const scaleX = rect.width / (bw + pad * 2);
     const scaleY = rect.height / (bh + pad * 2);
     // Same clamp as setZoom — focusing a tiny shape must not exceed max zoom.
-    const scale = Math.max(0.05, Math.min(64, Math.min(scaleX, scaleY)));
+    const scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(scaleX, scaleY)));
     this.zoom = scale;
     this.viewBox.w = rect.width / this.zoom;
     this.viewBox.h = rect.height / this.zoom;

@@ -28,6 +28,7 @@ import type { ToolName } from '../core/types';
 import { formatAccelerator, IS_MAC } from '../commands';
 import { hintsEnabled, onHintsChange } from './hint-prefs';
 import { hoveredDirection } from './direction-overlay';
+import { revealAction, pulse } from './feedback';
 
 export interface HintChip {
   key: string;
@@ -284,7 +285,13 @@ function chipEl(key: string, label: string, command?: string): HTMLElement {
     const btn = el as HTMLButtonElement;
     btn.type = 'button';
     btn.setAttribute('aria-label', key ? `${label} (${key})` : label);
-    btn.addEventListener('click', () => runCommandById?.(command));
+    btn.addEventListener('click', () => {
+      runCommandById?.(command);
+      // The command may replace this chip; acknowledge the interaction on the
+      // stable strip rather than on a detached button. This is not success feedback.
+      const strip = stripEl();
+      if (strip && !strip.hidden) pulse(strip);
+    });
   } else {
     el.setAttribute('aria-hidden', 'true'); // visual chrome; the menus carry the same facts
   }
@@ -302,7 +309,24 @@ function chipEl(key: string, label: string, command?: string): HTMLElement {
 function show(el: HTMLElement, chips: HintChip[]): void {
   const key = keyOf(chips);
   if (key !== lastKey) {
-    el.replaceChildren(...chips.map((c) => chipEl(c.key, c.label, c.command)));
+    const existing = new Map(Array.from(el.children).map(child => [
+      (child as HTMLElement).dataset.chipKey, child as HTMLElement,
+    ]));
+    const next = chips.map(c => {
+      const identity = keyOf([c]);
+      const retained = existing.get(identity);
+      if (retained) { existing.delete(identity); return retained; }
+      const child = chipEl(c.key, c.label, c.command);
+      child.dataset.chipKey = identity;
+      return child;
+    });
+    // Reconcile in place: unchanged buttons keep focus and do not replay motion.
+    for (const child of existing.values()) child.remove();
+    next.forEach((child, i) => {
+      const fresh = child.parentElement !== el;
+      if (el.children[i] !== child) el.insertBefore(child, el.children[i] ?? null);
+      if (fresh && chips[i].command) revealAction(child);
+    });
     lastKey = key;
   }
   el.hidden = false;
@@ -314,7 +338,9 @@ export function updateToolHint(state: AppState): void {
   if (gestureChips) return; // the gesture owns the strip until it ends
   const el = stripEl();
   if (!el) return;
-  const chips = hintsEnabled() ? (TOOL_HINTS[state.currentTool]?.(state) ?? []) : [];
+  const available = TOOL_HINTS[state.currentTool]?.(state) ?? [];
+  // Instructional hints are optional; actual commands remain discoverable.
+  const chips = hintsEnabled() ? available : available.filter(c => c.command);
   if (chips.length === 0) { el.hidden = true; lastKey = ''; return; }
   show(el, chips);
 }
