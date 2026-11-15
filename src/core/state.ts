@@ -2451,7 +2451,7 @@ export class AppState {
 
   // Grouping is owned by LayerManager with the other Layers-panel verbs (#192).
   groupSelectedShapes(): void { this.layerMgr.groupSelectedShapes(); }
-  /** Create a new empty group ("layer") at the top of the stack. */
+  /** Create a new empty group at the top of the stack. */
   addEmptyGroup(): void { this.layerMgr.addEmptyGroup(); }
   ungroupShape(id: string): void { this.layerMgr.ungroupShape(id); }
 
