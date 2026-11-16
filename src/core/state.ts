@@ -1795,7 +1795,8 @@ export class AppState {
    *  not a layer: it is named after its frame (`frameclip-N`), so a copy's clip
    *  follows the copy's own id instead of taking a `shape-N` id that rebuild then
    *  finds in the DOM but not in the model. Call after the container has its new id. */
-  private reIdGroupChildren(groupEl: SVGElement): void {
+  private reIdGroupChildren(groupEl: SVGElement, idMap?: Map<string, string>): void {
+    const map = idMap ?? new Map<string, string>();
     const isFrame = groupEl.hasAttribute('data-frame');
     for (let i = 0; i < groupEl.children.length; i++) {
       const child = groupEl.children[i] as SVGElement;
@@ -1804,12 +1805,13 @@ export class AppState {
         continue;
       }
       if (child.id) {
-        child.id = this.nextId();
+        const oldId = child.id; child.id = this.nextId(); map.set(oldId, child.id);
       }
       if (child.tagName.toLowerCase() === 'g') {
-        this.reIdGroupChildren(child);
+        this.reIdGroupChildren(child, map);
       }
     }
+    if (!idMap) remapFrameExportSources(groupEl, map);
   }
 
   /** Record the current document as an undo step. Delegates the navigation
@@ -3361,3 +3363,4 @@ export class AppState {
     this.notify();
   }
 }
+import { remapFrameExportSources } from './svg-refs';

@@ -154,13 +154,15 @@ export interface Artboard {
   rulers?: boolean;
 }
 
-export type ExportFormat = 'svg' | 'png' | 'jpg' | 'bmp' | 'gif' | 'tiff';
+export type ExportFormat = 'svg' | 'png' | 'jpg' | 'bmp' | 'gif' | 'tiff' | 'glb';
 
 /** One row in a frame's export list: a file to produce when the frame is exported.
  *  Lets a single logo fan out to many platform assets (favicon, apple-touch, …),
  *  each with its own filename, format and size. Stored as JSON in the frame's
  *  `data-export-targets` attribute so it round-trips through history/save. */
 export interface ExportTarget {
+  /** GLB: physical geometry and material settings, saved with this frame target. */
+  glb?: import('./glb-options').GlbOptions;
   format: ExportFormat;
   /** Filename base (no extension); the extension is derived from `format`. */
   name: string;

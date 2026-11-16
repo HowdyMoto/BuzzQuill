@@ -1,4 +1,6 @@
-import { portableSvg } from '../core/raster-assets';
+import { portableSvg, pinAssets } from '../core/raster-assets';
+import { captureGlbSnapshot, type GlbSnapshot } from '../core/glb-source';
+import { frameGlbOptions } from '../core/glb-options';
 import type { AppState } from '../core/state';
 import type { ExportFormat, Artboard, ExportTarget } from '../core/types';
 import { bakeLayerContent } from '../core/bake';
@@ -21,7 +23,7 @@ type TextMode = 'keep' | 'outline' | 'embed';
 type ExportSize = { mode: 'scale' | 'width' | 'height'; value: number };
 
 /** Every export format except SVG rasterizes. */
-type RasterFormat = Exclude<ExportFormat, 'svg'>;
+type RasterFormat = Exclude<ExportFormat, 'svg' | 'glb'>;
 const MIME: Record<RasterFormat, RasterMime> = {
   png: 'image/png', jpg: 'image/jpeg', bmp: 'image/bmp', gif: 'image/gif', tiff: 'image/tiff',
 };
@@ -41,6 +43,7 @@ export async function exportArtboardToFile(state: AppState, ab: Artboard): Promi
 }
 
 const FILE_TYPES: Record<ExportFormat, { description: string; accept: Record<string, string[]> }> = {
+  glb: { description: '3D GLB model', accept: { 'model/gltf-binary': ['.glb'] } },
   svg: { description: 'SVG Image', accept: { 'image/svg+xml': ['.svg'] } },
   png: { description: 'PNG Image', accept: { 'image/png': ['.png'] } },
   jpg: { description: 'JPEG Image', accept: { 'image/jpeg': ['.jpg'] } },
@@ -77,32 +80,55 @@ function targetBackground(t: ExportTarget): string {
  *  per-format options (text handling & bake for SVG; background & quality for raster).
  *  `cache` memoizes the drawing markup per (bake, textMode) across a batch so several
  *  targets that share settings don't re-outline. */
+interface TargetSnapshot {
+  fit: ReturnType<typeof exportRect>;
+  bake: boolean;
+  textMode: TextMode;
+  drawing: { content: string; warnings: string[] };
+  defs: string;
+  fonts: EmbeddedFont[];
+  namespaces: string;
+}
+function captureTarget(state: AppState, ab: Artboard, t: ExportTarget, drawings: Map<boolean, { content: string; warnings: string[] }>): TargetSnapshot | undefined {
+  if (t.format === 'glb') return undefined;
+  const bake = t.bake ?? state.bakeTransformsOnExport;
+  let drawing = drawings.get(bake);
+  if (!drawing) { drawing = layerContent(state, bake); drawings.set(bake, drawing); }
+  return { fit: exportRect(state, ab, t.bounds), bake, drawing, defs: state.getDefsBlock(), fonts: [...state.embeddedFonts], namespaces: state.getExtraNamespaceDecls(),
+    textMode: t.format === 'svg' ? (t.textMode ?? state.textExportMode) : 'embed' };
+}
 async function buildTargetFile(
-  state: AppState, frameAb: Artboard, t: ExportTarget,
+  frameAb: Artboard, t: ExportTarget, captured: TargetSnapshot | undefined,
   cache: Map<string, { drawingSvg: string; defsBlock: string; warnings: string[] }>,
+  glbSnapshot?: GlbSnapshot,
 ): Promise<{ blob: Blob; filename: string; format: ExportFormat; warnings: string[] }> {
   const base = sanitizeFilename(t.name) || sanitizeFilename(frameAb.name) || 'export';
+  if (t.format === 'glb') {
+    if (!glbSnapshot) throw new Error('The 3D export snapshot is missing.');
+    const { buildGlb } = await import('../core/glb-export');
+    const model = await buildGlb(glbSnapshot, frameGlbOptions(frameAb.id, frameAb.width, t.glb));
+    try { return { blob: await model.encode(), filename: `${base}.glb`, format: 'glb', warnings: model.warnings }; }
+    finally { model.dispose(); }
+  }
   // The canvas this target covers: the frame, or the frame narrowed to its paths.
-  const fit = exportRect(state, frameAb, t.bounds);
+  if (!captured) throw new Error('The export snapshot is missing.');
+  const { fit, bake, textMode, drawing } = captured;
   const ab = fit.rect;
   const { w, h } = outputDims(ab, t);
   const bg = targetBackground(t);
-  const bake = t.bake ?? state.bakeTransformsOnExport;
   // SVG honours the user's text mode. Raster is rendered by loading the SVG string as
   // an <img> — an isolated context with NO access to the page's loaded fonts — so text
   // would fall back to a default face unless the fonts travel WITH the SVG. Embed them
   // ('embed' = @font-face data-URLs for every used font) so the pixels match the canvas.
-  const textMode: TextMode = t.format === 'svg' ? (t.textMode ?? state.textExportMode) : 'embed';
 
   const key = `${bake}|${textMode}`;
   let base2 = cache.get(key);
   if (!base2) {
-    const drawing = layerContent(state, bake);
-    const r = await applyTextMode(drawing.content, state.getDefsBlock(), textMode, state.embeddedFonts);
+    const r = await applyTextMode(drawing.content, captured.defs, textMode, captured.fonts);
     base2 = { drawingSvg: r.drawingSvg, defsBlock: r.defsBlock, warnings: [...drawing.warnings, ...r.warnings] };
     cache.set(key, base2);
   }
-  const svgStr = buildArtboardSVG(ab, base2.drawingSvg, base2.defsBlock, state.getExtraNamespaceDecls(), bg);
+  const svgStr = buildArtboardSVG(ab, base2.drawingSvg, base2.defsBlock, captured.namespaces, bg);
 
   const warnings = fit.note ? [...base2.warnings, fit.note] : base2.warnings;
   if (t.format === 'svg') {
@@ -203,15 +229,21 @@ export async function writeExportedFiles(files: BuiltFile[]): Promise<boolean> {
  *  quality); the drawing markup is memoized per (bake, textMode) across the batch. */
 export async function exportFrameTargets(state: AppState, ab: Artboard, targets: ExportTarget[]): Promise<boolean> {
   if (!targets.length) return false;
+  const capturedTargets = structuredClone(targets);
+  const snapshot = capturedTargets.some(t => t.format === 'glb') ? captureGlbSnapshot(state) : undefined;
+  const releases: (() => void)[] = [];
   try {
+    const drawings = new Map<boolean, { content: string; warnings: string[] }>();
+    const jobs = capturedTargets.map(t => ({ t, ab: { ...ab }, captured: captureTarget(state, ab, t, drawings) }));
+    for (const job of jobs) if (job.captured) releases.push(pinAssets(job.captured.drawing.content + job.captured.defs));
     const cache = new Map<string, { drawingSvg: string; defsBlock: string; warnings: string[] }>();
     const files: BuiltFile[] = [];
-    for (const t of targets) files.push(await buildTargetFile(state, ab, t, cache));
+    for (const job of jobs) files.push(await buildTargetFile(job.ab, job.t, job.captured, cache, snapshot));
     return await writeExportedFiles(files);
   } catch (err) {
     alert('Export failed: ' + (err instanceof Error ? err.message : String(err)));
     return false;
-  }
+  } finally { snapshot?.release?.(); releases.forEach(release => release()); }
 }
 
 /** Export EVERY frame in one action, each producing its OWN configured export targets
@@ -220,17 +252,21 @@ export async function exportFrameTargets(state: AppState, ab: Artboard, targets:
 export async function exportAllFrames(state: AppState): Promise<boolean> {
   const frames = state.framesInPageOrder;
   if (!frames.length) { showToast('No frames to export.'); return false; }
+  const jobs = frames.flatMap(ab => state.getFrameExportTargets(ab.id).map(t => ({ ab: { ...ab }, t: structuredClone(t) })));
+  const snapshot = jobs.some(job => job.t.format === 'glb') ? captureGlbSnapshot(state) : undefined;
+  const releases: (() => void)[] = [];
   try {
+    const drawings = new Map<boolean, { content: string; warnings: string[] }>();
+    const prepared = jobs.map(job => ({ ...job, captured: captureTarget(state, job.ab, job.t, drawings) }));
+    for (const job of prepared) if (job.captured) releases.push(pinAssets(job.captured.drawing.content + job.captured.defs));
     const cache = new Map<string, { drawingSvg: string; defsBlock: string; warnings: string[] }>();
     const files: BuiltFile[] = [];
-    for (const ab of frames) {
-      for (const t of state.getFrameExportTargets(ab.id)) files.push(await buildTargetFile(state, ab, t, cache));
-    }
+    for (const { ab, t, captured } of prepared) files.push(await buildTargetFile(ab, t, captured, cache, snapshot));
     return await writeExportedFiles(files);
   } catch (err) {
     alert('Export failed: ' + (err instanceof Error ? err.message : String(err)));
     return false;
-  }
+  } finally { snapshot?.release?.(); releases.forEach(release => release()); }
 }
 
 /** Open the folder picker and remember the choice as the export destination.
@@ -329,7 +365,14 @@ export function showExportDialog(state: AppState): void {
     { value: 'bmp', label: 'BMP (.bmp)' },
     { value: 'gif', label: 'GIF (.gif)' },
     { value: 'tiff', label: 'TIFF (.tiff)' },
+    { value: 'glb', label: 'GLB 3D model (.glb)' },
   ]);
+  formatSelect.addEventListener('change', () => {
+    if (formatSelect.value !== 'glb') return;
+    const snapshot = captureGlbSnapshot(state);
+    close();
+    void import('./glb-dialog').then(m => m.showGlbDialog(state, snapshot)).catch(error => { snapshot.release?.(); showToast(`3D export could not load: ${String(error)}`); });
+  });
   body.appendChild(createField('Format', formatSelect));
 
   // Size (raster only) — a scale multiplier, or an exact output width or

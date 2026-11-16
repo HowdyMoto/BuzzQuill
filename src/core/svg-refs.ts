@@ -15,6 +15,29 @@
 /** `url(#name)` in a presentation attribute or inline style. */
 const URL_REF = /url\(\s*['"]?#([^)'"\s]+)['"]?\s*\)/g;
 
+/** Embedded GLB source IDs are plain JSON strings, not SVG url(#...) references. */
+export function remapFrameExportSources(root: Element, map: Map<string, string>): void {
+  for (const el of [root, ...root.querySelectorAll('[data-export-targets]')]) {
+    const raw = el.getAttribute('data-export-targets'); if (!raw) continue;
+    try {
+      const targets = JSON.parse(raw);
+      if (!Array.isArray(targets)) continue;
+      for (const target of targets) {
+        const glb = target?.glb;
+        if (!glb || typeof glb !== 'object') continue;
+        const references = new Map(map);
+        // The container already has its new ID when descendants are re-IDed.
+        // Its stored scope identifies references to the old container itself.
+        if (el.hasAttribute('data-frame') && typeof glb.scope === 'string' && glb.scope.startsWith('shape-')) references.set(glb.scope, el.id);
+        for (const key of ['scope', 'geometry', 'color']) if (references.has(glb[key])) glb[key] = references.get(glb[key]);
+        for (const key of ['roughness', 'metallic']) if (glb[key] && references.has(glb[key].source)) glb[key].source = references.get(glb[key].source);
+        if (el.hasAttribute('data-frame')) glb.scope = el.id;
+      }
+      el.setAttribute('data-export-targets', JSON.stringify(targets));
+    } catch { /* Invalid stored target metadata is handled by FrameChromeManager. */ }
+  }
+}
+
 /** Every id referenced by `root` or its descendants. */
 export function collectRefIds(root: Element): Set<string> {
   const out = new Set<string>();
@@ -38,6 +61,7 @@ export function collectRefIds(root: Element): Set<string> {
 export function remapRefs(roots: Element[], map: Map<string, string>): void {
   if (map.size === 0) return;
   for (const root of roots) {
+    remapFrameExportSources(root, map);
     for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
       for (const attr of Array.from(el.attributes)) {
         const v = attr.value;

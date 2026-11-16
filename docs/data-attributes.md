@@ -41,7 +41,7 @@ This is the map of who owns what. Two big buckets:
 | `data-frame-w` / `data-frame-h` | Frame bounds (NOT a scale transform — frames resize their own box). |
 | `data-frame-rulers` | Per-frame rulers on/off (editor chrome config, but stored here so it round-trips). |
 | `data-grid`, `data-grid-mode`, `data-grid-size`, `data-grid-cols`, `data-grid-rows`, `data-grid-subdiv`, `data-grid-color`, `data-grid-snap`, `data-grid-hidden` | Per-frame grid config. `data-grid-mode="divisions"` divides the frame into exactly cols × rows parts (spacing re-derived on resize); absent = fixed pixel spacing (`data-grid-size`). |
-| `data-export-targets` | The frame's export targets — JSON array of `{format,name,scale}` plus optional `width`/`height`, per-format options (`textMode`, `bake`, `background`, `quality`) and `bounds` (`'paths'` fits the canvas to the visible path geometry; absent means the frame). |
+| `data-export-targets` | The frame's export targets — JSON array of `{format,name,scale}` plus optional `width`/`height`, per-format options (`textMode`, `bake`, `background`, `quality`, `glb`) and `bounds` (`'paths'` fits the canvas to the visible path geometry; absent means the frame). GLB targets store physical dimensions, units, source-layer IDs and material settings in `glb`; their scope is always the owning frame. |
 | `data-export-format`, `data-export-scale` | The legacy single-target settings. Read only to migrate an old document; both are removed the first time `setExportTargets` writes `data-export-targets`. |
 
 ### Repeat grid — `core/repeat.ts`, `ui/repeat-panel.ts`

@@ -177,6 +177,8 @@ Panels follow `setupX(state)` (wire once at boot) + `updateX(state)` (called fro
 
 ## Document format boundary
 
+GLB export is lazy-loaded from the Export dialog. `core/glb-source.ts` captures a synchronous document snapshot; `glb-geometry`, `glb-material`, and `glb-export` build an isolated mesh and embedded textures without touching live markup. `ui/glb-preview.ts` owns/disposes its renderer; the model owns/disposes mesh/material/texture resources. See `docs/glb-export.md` and `test/glb-export.spec.ts`.
+
 `core/document-codec.ts` owns SVG serialization/loading, embedded format types, and legacy `.svgmaker` decoding. It has no UI imports; import warnings go through a caller-supplied callback. `ui/project-file.ts` retains compatibility exports and adds toast/loading feedback and file workflows. The shared HTML/XML escaper lives in `core/markup-escape.ts`, re-exported by `ui/dom.ts`.
 
 `DocumentManager` imports the codec directly. Its required `DocumentManagerHost`, wired in `main.ts`, supplies warning feedback and the focused-style reset. Active metadata is owned by `core/document-identity.ts`; the shell subscribes to update the browser title. Inactive tabs retain their existing snapshots: history still owns dirty state, and tab switching retains its atomic batch and captured save ownership. `core/pending-open.ts` holds the prompt-free load contract.

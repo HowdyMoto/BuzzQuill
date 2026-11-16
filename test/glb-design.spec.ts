@@ -1,0 +1,53 @@
+import { test, expect } from '@playwright/test';
+
+test('3D options reveal only relevant controls and explain stale preview state', async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const errors: string[]=[]; page.on('pageerror',e=>errors.push(e.message));
+  page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
+  await page.goto('/'); await page.waitForFunction(()=>(window as any).state);
+  const mapId = await page.evaluate(async()=>{
+    const s=(window as any).state; const frame=s.artboards[0];
+    const el=document.createElementNS('http://www.w3.org/2000/svg','rect'); el.id=s.nextId(); el.setAttribute('width','100');el.setAttribute('height','100');el.setAttribute('fill','#d95c37');el.setAttribute('data-name','Outline');
+    document.getElementById(frame.id)!.append(el);
+    const map=el.cloneNode(true) as SVGElement; map.id=s.nextId();map.setAttribute('data-name','Roughness map');map.setAttribute('fill','#808080');map.style.display='none';el.after(map);s.rebuildShapesFromDOM();s.selectShape(frame.id);
+    const {captureGlbSnapshot}=await import('/src/core/glb-source.ts');const {frameGlbOptions}=await import('/src/core/glb-options.ts');const {showGlbDialog}=await import('/src/ui/glb-dialog.ts');
+    const options=frameGlbOptions(frame.id,frame.width);options.resolution=512;
+    showGlbDialog(s,captureGlbSnapshot(s),{options,apply(){}});return map.id;
+  });
+  const dialog=page.locator('#glb-dialog-overlay');
+  await expect(dialog.locator('.glb-state-badge')).toHaveText('Not built yet');
+  await expect(dialog.getByLabel('Base solid color',{exact:true})).toBeHidden();
+  await expect(dialog.getByLabel('Texture resolution',{exact:true})).toBeHidden();
+  await expect(dialog.getByLabel('Roughness channel',{exact:true})).toBeHidden();
+  await dialog.getByLabel('Base color source',{exact:true}).selectOption('solid');
+  await expect(dialog.getByLabel('Base solid color',{exact:true})).toBeVisible();
+  await dialog.locator('summary').filter({hasText:/^Roughness from a layer/}).click();
+  await expect(dialog.getByLabel('Roughness channel',{exact:true})).toBeHidden();
+  await dialog.getByLabel('Roughness source',{exact:true}).selectOption(mapId);
+  await expect(dialog.getByLabel('Roughness channel',{exact:true})).toBeVisible();
+  await expect(dialog.getByLabel('Unpainted roughness value',{exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'Build preview',exact:true}).click();
+  await expect(dialog.locator('.glb-state-badge')).toHaveText('✓ Preview ready');
+  await dialog.getByRole('button',{name:'Front',exact:true}).click();
+  await dialog.getByLabel('Thickness',{exact:true}).fill('7');
+  await expect(dialog.locator('.glb-state-badge')).toHaveText('Changes not previewed');
+  await expect(dialog.getByRole('button',{name:'Save frame settings',exact:true})).toBeDisabled();
+  await expect(dialog.getByRole('button',{name:'Export GLB',exact:true})).toBeDisabled();
+  await expect(dialog.locator('canvas')).toBeVisible();
+  await dialog.getByRole('button',{name:'Update preview',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'Save frame settings',exact:true})).toBeEnabled();
+  await expect(dialog.getByRole('button',{name:'Front',exact:true})).toHaveAttribute('aria-pressed','true');
+  const animation = await dialog.locator('.glb-state-badge').evaluate(el=>getComputedStyle(el).animationName);
+  expect(animation).toBe('none');
+  await page.setViewportSize({width:700,height:900});
+  await dialog.getByRole('button',{name:'Jump to preview ↓',exact:true}).click();
+  await expect(dialog.locator('.glb-preview-panel')).toBeFocused();
+  const bounds=await dialog.evaluate(el=>{
+    const body=el.querySelector('.modal-body')!, button=el.querySelector('.glb-build-button')!;
+    const a=body.getBoundingClientRect(), b=button.getBoundingClientRect();
+    return {overflow:el.scrollWidth>el.clientWidth,visible:b.top>=a.top&&b.bottom<=a.bottom};
+  });
+  expect(bounds).toEqual({overflow:false,visible:true});
+  await page.screenshot({path:'test-results/glb-design-narrow.png'});
+  expect(errors).toEqual([]);
+});

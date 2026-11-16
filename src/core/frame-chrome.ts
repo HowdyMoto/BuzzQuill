@@ -180,7 +180,7 @@ export class FrameChromeManager {
   private coerceTarget(t: any, base: string): ExportTarget | null {
     if (!t || typeof t !== 'object') return null;
     const format: ExportTarget['format'] =
-      ['svg', 'png', 'jpg', 'bmp', 'gif', 'tiff'].includes(t.format) ? t.format : 'svg';
+      ['svg', 'png', 'jpg', 'bmp', 'gif', 'tiff', 'glb'].includes(t.format) ? t.format : 'svg';
     const num = (v: any) => (Number.isFinite(v) && v > 0 ? Math.round(v) : undefined);
     const out: ExportTarget = {
       format,
@@ -189,6 +189,7 @@ export class FrameChromeManager {
       width: num(t.width),
       height: num(t.height),
     };
+    if (format === 'glb') out.glb = readGlbOptions(t.glb);
     // Per-format options — preserve only meaningful, valid values for the format.
     if (format === 'svg') {
       if (t.textMode === 'keep' || t.textMode === 'outline' || t.textMode === 'embed') out.textMode = t.textMode;
@@ -204,3 +205,4 @@ export class FrameChromeManager {
     return out;
   }
 }
+import { readGlbOptions } from './glb-options';
