@@ -28,6 +28,15 @@ test('3D options reveal only relevant controls and explain stale preview state',
   await expect(dialog.getByLabel('Unpainted roughness value',{exact:true})).toBeVisible();
   await dialog.getByRole('button',{name:'Build preview',exact:true}).click();
   await expect(dialog.locator('.glb-state-badge')).toHaveText('✓ Preview ready');
+  await dialog.locator('summary').filter({hasText:/^Pivot/}).click();
+  await dialog.getByLabel('Pivot object',{exact:true}).selectOption(mapId);
+  await expect(dialog.locator('.glb-state-badge')).toHaveText('Changes not previewed');
+  await expect(dialog.getByRole('button',{name:'Export GLB',exact:true})).toBeDisabled();
+  await expect(dialog.getByText('Pivot change pending · update the preview to move it',{exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'Update preview',exact:true}).click();
+  await expect(dialog.locator('.glb-state-badge')).toHaveText('✓ Preview ready');
+  await expect(dialog.getByText('Pivot: Roughness map · axes mark the exported origin',{exact:true})).toBeVisible();
+  await page.screenshot({path:'test-results/glb-pivot-preview.png'});
   await dialog.getByRole('button',{name:'Front',exact:true}).click();
   await dialog.getByLabel('Thickness',{exact:true}).fill('7');
   await expect(dialog.locator('.glb-state-badge')).toHaveText('Changes not previewed');

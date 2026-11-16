@@ -16,7 +16,16 @@ and **Settings** links within one scroll area. Preview badges distinguish not
 built, building, ready, changes not previewed and errors. Disclosures and state
 feedback respect reduced-motion preferences; artwork never auto-rotates.
 
-The model is centred on the origin in metres, with the front facing +Z. Width
+By default the model is centred on the origin in metres, with the front facing +Z.
+In **Shape & size → Pivot**, choose a **Pivot object** to place its bounding-box
+center at the GLB origin instead. Parent transforms and nested viewports are
+respected; the object's rotation and scale are not inherited. Z remains halfway
+through the thickness. Hidden objects and objects outside the export scope can
+serve as guides. Visible pivot objects remain part of the artwork; hide a guide
+to exclude it. The preview axes mark the exported pivot and are not exported.
+Changing the pivot does not change size, thickness, UVs or texture alignment.
+Pivot choices persist with frame settings and remap when a frame is duplicated.
+Missing or empty pivot objects require choosing another object. Width
 sets uniform scale; height follows the shape or selected frame's aspect ratio.
 Frame width starts at 96 SVG pixels per inch. Thickness is independent of width.
 The back can share the planar artwork projection (text reads backwards from

@@ -14,6 +14,7 @@ export interface GlbTargetEditor { options: GlbOptions; apply(options: GlbOption
 export function showGlbDialog(state: AppState, snapshot: GlbSnapshot = captureGlbSnapshot(state), target?: GlbTargetEditor): void {
   let closed = false, revision = 0, busy = false, saving = false;
   let model: GlbModel | null = null, blob: Blob | null = null;
+  let previewPivot = '';
   let preview: ReturnType<typeof createGlbPreview> | null = null;
   const modal = openModal({ id: 'glb-dialog-overlay', ariaLabel: 'Export 3D GLB', dialogClass: 'glb-dialog', onClose() {
     closed = true; revision++; preview?.dispose(); model?.dispose(); snapshot.release?.();
@@ -82,6 +83,7 @@ export function showGlbDialog(state: AppState, snapshot: GlbSnapshot = captureGl
     const saved = remembered.get(state)?.get(targetKey(value)); if (saved) Object.assign(o, structuredClone(saved)); o.scope = value; fields.forEach(f => f());
   });
   scopeSelect.disabled = !!target;
+  chooseLayer('Pivot object', 'Model center', () => o.pivot, v => { o.pivot = v; });
   chooseLayer('Geometry source', 'Visible vectors in scope', () => o.geometry, v => { o.geometry = v; });
   select('Geometry mode', [{ value: 'silhouette', label: 'Solid silhouette — fill closed outlines' }, { value: 'painted', label: 'Visible fills and strokes — preserve hollow outlines' }], () => o.geometryMode, v => { o.geometryMode = v as GlbOptions['geometryMode']; });
   select('Units', [{ value: 'mm', label: 'Millimetres' }, { value: 'cm', label: 'Centimetres' }, { value: 'in', label: 'Inches' }], () => o.unit, v => {
@@ -133,6 +135,11 @@ export function showGlbDialog(state: AppState, snapshot: GlbSnapshot = captureGl
   const dims = pair(shape, 'glb-dimensions'); move(dims, 'Width (aspect ratio locked)', 'Width'); move(dims, 'Thickness'); move(dims, 'Units');
   const units = fieldRows.get('Units')!.querySelector('select')!; [...units.options].forEach(opt => { opt.text = opt.value; });
   help(shape, 'Height follows the artwork’s proportions.');
+  const pivot = section(shape, 'Pivot', !!o.pivot, () => layerName(o.pivot, o.pivot ? 'Missing object' : 'Model center'));
+  move(pivot.content, 'Pivot object', 'Center on object');
+  help(pivot.content, 'The object’s center becomes the rotation and scaling pivot, halfway through the thickness. Hide a guide object to keep it out of the model.');
+  const pivotHint = help(panel, '');
+  conditions.push(() => { pivotHint.textContent = model && o.pivot !== previewPivot ? 'Pivot change pending · update the preview to move it' : o.pivot ? `Pivot: ${layerName(o.pivot, 'missing object')} · axes mark the exported origin` : 'Pivot: model center · axes mark the exported origin'; });
 
   const surface = section(controls, 'Surface', true, () => `${o.color === 'solid' ? 'Solid color' : layerName(o.color, 'Visible artwork')} · ${o.metallic.source ? 'metallic map' : o.metallic.fallback > 0 ? `${Math.round(o.metallic.fallback * 100)}% metallic` : 'nonmetal'}`).content;
   move(surface, 'Base color source', 'Artwork on faces'); showWhen(move(surface, 'Base solid color', 'Face color'), () => o.color === 'solid');
@@ -206,7 +213,7 @@ export function showGlbDialog(state: AppState, snapshot: GlbSnapshot = captureGl
       status.textContent = '';
       try { preview ??= createGlbPreview(host); preview.setModel(next); preview.mode(mode.value); preview.view(view.value); }
       catch { status.textContent = '3D preview unavailable on this device. The GLB is ready to export. '; }
-      model?.dispose(); model = next; next = null; blob = encoded;
+      model?.dispose(); model = next; next = null; blob = encoded; previewPivot = o.pivot; conditions.forEach(f => f());
       setPreviewState('ready');
       status.textContent += `${o.width.toFixed(2)} × ${model.height.toFixed(2)} × ${o.thickness.toFixed(2)} ${o.unit} · ${model.triangles.toLocaleString()} triangles · ${(blob.size / 1024).toFixed(0)} KB. ${model.warnings.join(' ')}`;
       let targets = remembered.get(state); if (!targets) { targets = new Map(); remembered.set(state, targets); } targets.set(targetKey(o.scope), structuredClone(o));

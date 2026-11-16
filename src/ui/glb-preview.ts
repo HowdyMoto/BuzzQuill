@@ -1,4 +1,4 @@
-import { Box3, Color, HemisphereLight, DirectionalLight, PerspectiveCamera, Scene, Vector3, WebGLRenderer, Mesh, MeshStandardMaterial, MeshBasicMaterial, PMREMGenerator } from 'three';
+import { AxesHelper, Box3, Color, HemisphereLight, DirectionalLight, PerspectiveCamera, Scene, Vector3, WebGLRenderer, Mesh, MeshStandardMaterial, MeshBasicMaterial, PMREMGenerator } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { GlbModel } from '../core/glb-export';
@@ -17,6 +17,11 @@ export function createGlbPreview(host: HTMLElement) {
   const lamp = new DirectionalLight(0xffffff, 3); lamp.position.set(1, 2, 3); scene.add(lamp);
   let model: GlbModel | null = null;
   let span = 1;
+  const center = new Vector3();
+  const pivot = new AxesHelper(1);
+  for (const material of Array.isArray(pivot.material) ? pivot.material : [pivot.material]) material.depthTest = false;
+  pivot.renderOrder = 1;
+  scene.add(pivot);
   const originals = new Map<Mesh, MeshStandardMaterial[]>();
   const inspection: MeshBasicMaterial[] = [];
   const render = () => renderer.render(scene, camera);
@@ -44,7 +49,7 @@ export function createGlbPreview(host: HTMLElement) {
   };
   const view = (v: string) => {
     camera.position.set(v === 'perspective' ? span * .8 : 0, v === 'perspective' ? span * .5 : 0, v === 'back' ? -span * 2.4 : span * 2.4);
-    controls.target.set(0, 0, 0); controls.update(); render();
+    camera.position.add(center); controls.target.copy(center); controls.update(); render();
   };
   return {
     setModel(next: GlbModel) {
@@ -53,9 +58,13 @@ export function createGlbPreview(host: HTMLElement) {
       model = next; originals.clear();
       next.object.traverse(n => { if (n instanceof Mesh) originals.set(n, n.material as MeshStandardMaterial[]); });
       scene.add(next.object);
-      const size = new Box3().setFromObject(next.object).getSize(new Vector3()); span = Math.max(size.x, size.y, size.z);
+      const bounds = new Box3().setFromObject(next.object);
+      const size = bounds.getSize(new Vector3());
+      pivot.scale.setScalar(Math.max(size.x, size.y, size.z) * .12);
+      bounds.expandByPoint(new Vector3()); bounds.expandByPoint(new Vector3().setScalar(pivot.scale.x));
+      bounds.getCenter(center); bounds.getSize(size); span = Math.max(size.x, size.y, size.z);
       camera.near = span / 10000; camera.far = span * 1000; camera.updateProjectionMatrix(); view('perspective');
     }, mode, view,
-    dispose() { mode('material'); observer.disconnect(); controls.dispose(); env.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); },
+    dispose() { mode('material'); observer.disconnect(); controls.dispose(); pivot.dispose(); env.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); },
   };
 }
