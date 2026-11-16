@@ -29,7 +29,7 @@ export function remapFrameExportSources(root: Element, map: Map<string, string>)
         // The container already has its new ID when descendants are re-IDed.
         // Its stored scope identifies references to the old container itself.
         if (el.hasAttribute('data-frame') && typeof glb.scope === 'string' && glb.scope.startsWith('shape-')) references.set(glb.scope, el.id);
-        for (const key of ['scope', 'geometry', 'color']) if (references.has(glb[key])) glb[key] = references.get(glb[key]);
+        for (const key of ['scope', 'geometry', 'color', 'pivot']) if (references.has(glb[key])) glb[key] = references.get(glb[key]);
         for (const key of ['roughness', 'metallic']) if (glb[key] && references.has(glb[key].source)) glb[key].source = references.get(glb[key].source);
         if (el.hasAttribute('data-frame')) glb.scope = el.id;
       }

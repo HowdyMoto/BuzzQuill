@@ -4,6 +4,7 @@ export interface MaterialMap { source: string; channel: MapChannel; invert: bool
 export interface GlbOptions {
   scope: string;
   geometry: string;
+  pivot: string;
   geometryMode: 'silhouette' | 'painted';
   color: string;
   colorValue: string;
@@ -40,7 +41,7 @@ export function readGlbOptions(value: unknown): GlbOptions | undefined {
   try { validateGlbOptions(out); return out; } catch { return undefined; }
 }
 export function defaultGlbOptions(): GlbOptions {
-  return { scope: 'document', geometry: '', geometryMode: 'silhouette', color: '', colorValue: '#ffffff', unit: 'mm', width: 100,
+  return { scope: 'document', geometry: '', pivot: '', geometryMode: 'silhouette', color: '', colorValue: '#ffffff', unit: 'mm', width: 100,
     thickness: 2, resolution: 2048, quality: 'standard',
     roughness: { source: '', channel: 'gray', invert: false, fallback: .5 },
     metallic: { source: '', channel: 'gray', invert: false, fallback: 0 },

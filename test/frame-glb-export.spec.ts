@@ -12,7 +12,7 @@ test('frame GLB target: sidebar settings, material editor, saved SVG roundtrip a
     const s = (window as any).state;
     const fid = s.addFrame(100,100,100,50,'Badge');
     const rect = document.createElementNS('http://www.w3.org/2000/svg','rect'); rect.id = s.nextId();
-    rect.setAttribute('width','100'); rect.setAttribute('height','50'); rect.setAttribute('fill','#d84c33');
+    rect.setAttribute('width','100'); rect.setAttribute('height','50'); rect.setAttribute('fill','#d84c33'); rect.setAttribute('data-name','Badge pivot');
     document.getElementById(fid)!.append(rect); s.rebuildShapesFromDOM();
     s.setFrameExportTargets(fid,[{format:'svg',name:'badge-model',scale:1}],true); s.selectShape(fid);
   });
@@ -28,6 +28,9 @@ test('frame GLB target: sidebar settings, material editor, saved SVG roundtrip a
   const dialog = page.locator('#glb-dialog-overlay');
   await expect(dialog.getByLabel('Scope',{exact:true})).toBeDisabled();
   await expect(dialog.getByLabel('Thickness',{exact:true})).toHaveValue('5');
+  await dialog.locator('summary').filter({hasText: /^Pivot/}).click();
+  await dialog.getByLabel('Pivot object',{exact:true}).selectOption({label:'Badge pivot'});
+  const pivotId=await dialog.getByLabel('Pivot object',{exact:true}).inputValue();
   await dialog.locator('summary').filter({hasText: /^Details/}).click();
   await dialog.getByLabel('Texture resolution',{exact:true}).selectOption('512');
   await dialog.getByLabel('Metallic value',{exact:true}).fill('0.8');
@@ -42,6 +45,7 @@ test('frame GLB target: sidebar settings, material editor, saved SVG roundtrip a
     const frame = s.artboards.find((f: any) => f.name === 'Badge'); s.selectShape(frame.id);
     return s.getFrameExportTargets(frame.id)[0];
   });
+  expect(settings.glb.pivot).toBe(pivotId);
   expect(settings.format).toBe('glb'); expect(settings.glb.width).toBe(100); expect(settings.glb.thickness).toBe(5); expect(settings.glb.metallic.fallback).toBe(.8);
   await page.screenshot({path:'test-results/frame-glb-options.png'});
   const downloaded = page.waitForEvent('download'); await page.locator('#fp-export-btn').click(); const file = await downloaded;
@@ -62,12 +66,12 @@ test('duplicating a frame remaps internal material and geometry references', asy
   const result = await page.evaluate(async () => {
     const s = (window as any).state; const fid = s.addFrame(0,0,100,100,'Original');
     const el = document.createElementNS('http://www.w3.org/2000/svg','rect'); el.id = s.nextId(); el.setAttribute('width','100'); el.setAttribute('height','100'); document.getElementById(fid)!.append(el); s.rebuildShapesFromDOM();
-    const {frameGlbOptions} = await import('/src/core/glb-options.ts'); const o = frameGlbOptions(fid,100); o.geometry=el.id; o.color=el.id; o.roughness.source=el.id; o.metallic.source='external-reference';
-    s.setFrameExportTargets(fid,[{format:'glb',name:'duplicate',scale:1,glb:o},{format:'glb',name:'whole-frame',scale:1,glb:{...o,geometry:fid,color:fid}}],true); s.selectShape(fid); s.duplicateSelected();
+    const {frameGlbOptions} = await import('/src/core/glb-options.ts'); const o = frameGlbOptions(fid,100); o.geometry=el.id; o.color=el.id; o.pivot=el.id; o.roughness.source=el.id; o.metallic.source='external-reference';
+    s.setFrameExportTargets(fid,[{format:'glb',name:'duplicate',scale:1,glb:o},{format:'glb',name:'whole-frame',scale:1,glb:{...o,geometry:fid,color:fid,pivot:fid}}],true); s.selectShape(fid); s.duplicateSelected();
     const copy = s.selectedShapeIds[0], target = s.getFrameExportTargets(copy)[0];
     return { copy, child: document.getElementById(copy)!.querySelector('rect[id]')!.id, glb: target.glb, whole: s.getFrameExportTargets(copy)[1].glb };
   });
-  expect(result.glb.scope).toBe(result.copy); expect(result.glb.geometry).toBe(result.child); expect(result.glb.color).toBe(result.child); expect(result.glb.roughness.source).toBe(result.child); expect(result.glb.metallic.source).toBe('external-reference');
+  expect(result.glb.pivot).toBe(result.child); expect(result.whole.pivot).toBe(result.copy); expect(result.glb.scope).toBe(result.copy); expect(result.glb.geometry).toBe(result.child); expect(result.glb.color).toBe(result.child); expect(result.glb.roughness.source).toBe(result.child); expect(result.glb.metallic.source).toBe('external-reference');
   expect(result.whole.geometry).toBe(result.copy); expect(result.whole.color).toBe(result.copy);
 });
 

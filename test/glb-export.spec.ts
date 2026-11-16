@@ -180,3 +180,48 @@ test('solid silhouette caps an unfilled closed outline for raster artwork; paint
   expect(result[0].front).toBeCloseTo(.005,7); expect(result[0].back).toBeCloseTo(.005,7);
   expect(result[0].pixel).toEqual([51,102,153,255]); expect(result[1].front).toBeLessThan(result[0].front/20);
 });
+
+
+test('pivot uses a hidden transformed object outside scope without changing UVs or size', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {buildGlb} = await import('/src/core/glb-export.ts');
+    const {defaultGlbOptions} = await import('/src/core/glb-options.ts');
+    const options=defaultGlbOptions(); options.scope='shape-art'; options.resolution=512; options.width=100;
+    const snapshot={svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"><g data-glb-content="true"><rect id="shape-art" x="10" y="20" width="100" height="50" fill="red"/><g transform="translate(100 200) rotate(90) scale(2)" display="none"><rect id="shape-pivot" width="10" height="20"/></g></g></svg>',fonts:[],selected:[],layers:[],frames:[]};
+    const before=snapshot.svg;
+    const original=await buildGlb(snapshot,options);
+    options.pivot='shape-pivot'; const moved=await buildGlb(snapshot,options);
+    const a=(original.object.children[0] as any).geometry, b=(moved.object.children[0] as any).geometry;
+    const min=b.boundingBox.min.toArray(), max=b.boundingBox.max.toArray();
+    const uvSame=JSON.stringify(Array.from(a.attributes.uv.array))===JSON.stringify(Array.from(b.attributes.uv.array));
+    const bytes=Array.from(new Uint8Array(await (await moved.encode()).arrayBuffer()));
+    const unchanged=snapshot.svg===before; original.dispose();moved.dispose();
+    return {min,max,uvSame,bytes,unchanged};
+  });
+  // Local (5,10) becomes document (80,210). SVG Y is inverted in GLB.
+  expect(result.min[0]).toBeCloseTo(-.07,6); expect(result.max[0]).toBeCloseTo(.03,6);
+  expect(result.min[1]).toBeCloseTo(.14,6); expect(result.max[1]).toBeCloseTo(.19,6);
+  expect(result.min[2]).toBeCloseTo(-.001,6); expect(result.max[2]).toBeCloseTo(.001,6);
+  expect(result.uvSame).toBe(true); expect(result.unchanged).toBe(true);
+  const bytes=new Uint8Array(result.bytes); const report=await validator.validateBytes(bytes);
+  expect(report.issues.numErrors,JSON.stringify(report.issues)).toBe(0);
+  const length=new DataView(bytes.buffer).getUint32(12,true);
+  const gltf=JSON.parse(new TextDecoder().decode(bytes.slice(20,20+length)));
+  expect(gltf.nodes.every((n:any)=>!n.translation&&!n.rotation&&!n.scale)).toBe(true);
+  expect(gltf.meshes).toHaveLength(1); // Preview axes never enter the export.
+});
+
+test('pivot measures nested viewport and raster bounds, rejects missing and empty guides', async ({page}) => {
+  const result=await page.evaluate(async()=>{
+    const {sourceSvg,glbPivot}=await import('/src/core/glb-source.ts');
+    const {readGlbOptions}=await import('/src/core/glb-options.ts');
+    const snapshot={svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500"><g data-glb-content="true"><svg x="100" y="50" width="200" height="100" viewBox="0 0 100 50"><image id="shape-image" x="10" y="5" width="20" height="10"/></svg><g id="shape-empty"/></g></svg>',fonts:[],selected:[],layers:[],frames:[]};
+    const point=glbPivot(sourceSvg(snapshot,['shape-image'],[],true),'shape-image');
+    const errors=[];
+    for (const id of ['shape-missing','shape-empty']) { try { glbPivot(sourceSvg(snapshot,[id],[],true),id); } catch(e) { errors.push(String(e)); } }
+    return {point,errors,legacy:readGlbOptions({width:100})?.pivot,saved:readGlbOptions({pivot:'shape-image'})?.pivot};
+  });
+  expect(result.point).toEqual({x:140,y:70}); expect(result.errors).toHaveLength(2);
+  expect(result.errors[0]).toContain('missing'); expect(result.errors[1]).toContain('no measurable bounds');
+  expect(result.legacy).toBe(''); expect(result.saved).toBe('shape-image');
+});

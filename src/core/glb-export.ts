@@ -1,6 +1,6 @@
 import { ExtrudeGeometry, Group, Mesh, MeshStandardMaterial, type Texture } from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-import { sourceSvg, type GlbSnapshot } from './glb-source';
+import { sourceSvg, glbPivot, type GlbSnapshot } from './glb-source';
 import { unitMetres, validateGlbOptions, type GlbOptions } from './glb-options';
 import { glbGeometry } from './glb-geometry';
 import { bakeGlbTexture, colorTexture, packGlbMaterial } from './glb-material';
@@ -34,6 +34,14 @@ async function buildGlbModel(snapshot: GlbSnapshot, options: GlbOptions): Promis
   geom.innerHTML = outlined.content;
   const result = await glbGeometry(geom, o.quality, frame, o.geometryMode);
   const { rect } = result;
+  let pivot = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  if (o.pivot) {
+    const guide = sourceSvg(snapshot, [o.pivot], [], true);
+    const text = await outlineText(guide.innerHTML, snapshot.fonts);
+    if (text.warnings.length) throw new Error(`Pivot text could not be outlined: ${text.warnings.join('; ')}`);
+    guide.innerHTML = text.content;
+    pivot = glbPivot(guide, o.pivot);
+  }
   const object = new Group(); object.name = 'BuzzQuill extrusion';
   const materials: MeshStandardMaterial[] = [];
   const textures: Texture[] = [];
@@ -69,7 +77,7 @@ async function buildGlbModel(snapshot: GlbSnapshot, options: GlbOptions): Promis
       for (let i = 0; i < p.count; i++) {
         uv.setXY(i, (p.getX(i) - rect.x) / rect.width, 1 - (p.getY(i) - rect.y) / rect.height);
         // Rotate SVG's Y-down space around X (also reverses Z), preserving winding.
-        p.setXYZ(i, (p.getX(i) - rect.x - rect.width / 2) * scale, -(p.getY(i) - rect.y - rect.height / 2) * scale, depth / 2 - p.getZ(i) * scale);
+        p.setXYZ(i, (p.getX(i) - pivot.x) * scale, -(p.getY(i) - pivot.y) * scale, depth / 2 - p.getZ(i) * scale);
         normal.setXYZ(i, normal.getX(i), -normal.getY(i), -normal.getZ(i));
       }
       geometry.clearGroups();

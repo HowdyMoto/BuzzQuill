@@ -5,6 +5,7 @@ import { normalizeTextStrokesForExport } from './text-stroke';
 import { stripHiddenForExport } from './export-scope';
 import { SVG_NS_DECLS } from './svg-ns';
 import { pinAssets } from './raster-assets';
+import { matrixBetween } from './coords';
 
 export interface GlbSnapshot {
   generation?: number;
@@ -84,4 +85,21 @@ export function mountGlbSvg(svg: SVGSVGElement): () => void {
   host.attachShadow({ mode: 'closed' }).append(svg);
   document.body.append(host);
   return () => host.remove();
+}
+
+/** Measure the object's local bounds centre in the export's document coordinates.
+ * The caller supplies an explicitly revealed snapshot, never the live drawing. */
+export function glbPivot(svg: SVGSVGElement, id: string): { x: number; y: number } {
+  const unmount = mountGlbSvg(svg);
+  try {
+    const content = svg.querySelector('[data-glb-content]') as SVGGraphicsElement;
+    const el = Array.from(content.querySelectorAll('[id]')).find(e => e.id === id) as SVGGraphicsElement | undefined;
+    if (!el?.getBBox) throw new Error('Pivot object is missing. Choose another object.');
+    const box = el.getBBox();
+    const matrix = matrixBetween(content, el);
+    if (!matrix || (!box.width && !box.height)) throw new Error('Pivot object has no measurable bounds. Choose another object.');
+    const point = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix);
+    if (![point.x, point.y].every(Number.isFinite)) throw new Error('Pivot object has an invalid transform.');
+    return { x: point.x, y: point.y };
+  } finally { unmount(); }
 }
