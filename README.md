@@ -46,6 +46,7 @@ Disconnect. Use browser site-data controls to clear them on a shared computer.
 - Gradients, patterns, strokes, shadows, clipping, masks and boolean operations.
 - Multiple document tabs, split view, undo/redo, snapping and alignment.
 - SVG and PDF import; vector and raster export; editable plain-SVG project files.
+- [3D GLB export](docs/glb-export.md) with thickness, baked artwork, and layer-driven roughness/metallic maps.
 - Local session recovery and optional Google Drive open/save.
 
 ## Build and deploy

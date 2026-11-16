@@ -8,12 +8,15 @@
 import type { AppState } from '../core/state';
 import type { FrameGrid, ExportTarget, Artboard } from '../core/types';
 import { defaultFrameGrid } from '../core/frame-chrome';
+import { frameGlbOptions, unitMetres, type GlbOptions } from '../core/glb-options';
+import { captureGlbSnapshot } from '../core/glb-source';
+import { showToast } from './toast';
 import { exportRect } from '../core/export-scope';
 import { openSolidColorPicker } from './color-picker';
 import { exportArtboardToFile, changeExportFolder } from './export-dialog';
 import { playExportSequence } from './feedback';
 import { rememberedExportDirName, hasRememberedExportDir, forgetExportDir } from '../core/export-store';
-import { createSelect, setToggle } from './components';
+import { createButton, createSelect, setToggle } from './components';
 import { showContextMenu } from './panel-helpers';
 
 import { mustId as $, bindLiveCommit } from './dom';
@@ -251,10 +254,11 @@ function syncExportTargets(state: AppState, fid: string): void {
   buildExportRows(state, fid);
 }
 
-const FORMATS: ExportTarget['format'][] = ['svg', 'png', 'jpg', 'bmp', 'gif', 'tiff'];
+const FORMATS: ExportTarget['format'][] = ['svg', 'png', 'jpg', 'bmp', 'gif', 'tiff', 'glb'];
 
 /** Canonical text for a target's size field: "2×" (scale) or "512" / "512×512". */
 function formatSize(t: ExportTarget): string {
+  if (t.format === 'glb') return '3D';
   if (t.width && t.height) return `${t.width}×${t.height}`;
   if (t.width) return `${t.width}`;
   if (t.height) return `×${t.height}`;
@@ -436,7 +440,9 @@ function buildExportRows(state: AppState, fid: string): void {
       showContextMenu(r.left, r.bottom + 4, FORMATS.map((f) => ({
         label: f.toUpperCase(),
         action: () => {
-          t.format = f; fmt.textContent = f.toUpperCase(); name.title = `${t.name}.${f}`; commit(true);
+          t.format = f;
+          if (f === 'glb') t.glb = frameGlbOptions(fid, ab?.width ?? 378, t.glb);
+          fmt.textContent = f.toUpperCase(); name.title = `${t.name}.${f}`; commit(true); syncCollapsed();
           if (!opts.hidden) renderOpts(); // options are format-specific
         },
       })));
@@ -452,6 +458,7 @@ function buildExportRows(state: AppState, fid: string): void {
     size.placeholder = '1×';
     size.title = `Size — type 2×, 512, or 512×512  ·  → ${outputPx()}`;
     const applySize = (record: boolean) => {
+      if (t.format === 'glb') return;
       const parsed = parseSize(size.value);
       if (!parsed) return;
       t.scale = parsed.scale; t.width = parsed.width; t.height = parsed.height;
@@ -466,8 +473,26 @@ function buildExportRows(state: AppState, fid: string): void {
     const syncCollapsed = () => {
       name.value = t.name; name.title = `${t.name}.${t.format}`;
       size.value = formatSize(t); size.title = `Size — type 2×, 512, or 512×512  ·  → ${outputPx()}`;
+      size.readOnly = t.format === 'glb';
+      if (t.format === 'glb') { size.value = '3D'; size.title = 'Physical size and thickness are in Export options'; }
     };
-    const renderOpts = () => buildTargetOptions(state, t, opts, { ab, commit, syncCollapsed });
+    syncCollapsed();
+    const configureGlb = () => {
+      const snapshot = captureGlbSnapshot(state);
+      const generation = state.documentGeneration;
+      const frameElement = document.getElementById(fid);
+      const expected = JSON.stringify(state.getFrameExportTargets(fid));
+      void import('./glb-dialog').then(({ showGlbDialog }) => showGlbDialog(state, snapshot, {
+        options: frameGlbOptions(fid, ab?.width ?? 378, t.glb),
+        apply(options) {
+          if (state.documentGeneration !== generation || document.getElementById(fid) !== frameElement || JSON.stringify(state.getFrameExportTargets(fid)) !== expected) {
+            throw new Error('The frame or its export targets changed. Reopen its 3D settings.');
+          }
+          t.glb = options; commit(true); syncCollapsed(); renderOpts();
+        },
+      })).catch(error => { snapshot.release?.(); showToast(`Could not open 3D settings: ${String(error)}`); });
+    };
+    const renderOpts = () => buildTargetOptions(state, t, opts, { ab, commit, syncCollapsed, configureGlb });
 
     // Options disclosure caret.
     const gear = document.createElement('button');
@@ -521,6 +546,7 @@ interface TargetOptCtx {
   ab: Artboard | undefined;
   commit: (record: boolean) => void;
   syncCollapsed: () => void;
+  configureGlb: () => void;
 }
 
 /** Render a target's expanded settings card into `container` (cleared first). The
@@ -604,6 +630,31 @@ function buildTargetOptions(state: AppState, t: ExportTarget, container: HTMLEle
     const holder = document.createElement('span'); holder.className = 'fp-opt-qty'; holder.append(inp, u);
     return holder;
   };
+
+  if (t.format === 'glb') {
+    const settings = frameGlbOptions(ctx.ab?.id ?? '', ctx.ab?.width ?? 378, t.glb);
+    const saveSettings = () => { t.glb = settings; ctx.commit(true); ctx.syncCollapsed(); };
+    const geometryMode = createSelect([{ value: 'silhouette', label: 'Solid silhouette' }, { value: 'painted', label: 'Fills and strokes' }]);
+    geometryMode.classList.add('fp-opt-select'); geometryMode.value = settings.geometryMode;
+    geometryMode.addEventListener('change', () => { settings.geometryMode = geometryMode.value as GlbOptions['geometryMode']; saveSettings(); });
+    container.append(optRow('Geometry', geometryMode));
+    const units = createSelect([{ value: 'mm', label: 'mm' }, { value: 'cm', label: 'cm' }, { value: 'in', label: 'inches' }]);
+    units.classList.add('fp-opt-select'); units.value = settings.unit;
+    units.addEventListener('change', () => {
+      const unit = units.value as GlbOptions['unit']; const ratio = unitMetres[settings.unit] / unitMetres[unit];
+      settings.width *= ratio; settings.thickness *= ratio; settings.unit = unit; saveSettings(); rerender();
+    });
+    container.append(optRow('Units', units));
+    for (const [key, label] of [['width', 'Width'], ['thickness', 'Thickness']] as const) {
+      container.append(optRow(label, numField(settings[key], settings.unit, '', () => {}, (v, input) => {
+        const value = Number(v); if (Number.isFinite(value) && value > 0) settings[key] = value;
+        input.value = String(settings[key]); saveSettings();
+      }, { min: .0001, step: 'any' })));
+    }
+    const caption = document.createElement('div'); caption.className = 'fp-opt-caption'; caption.textContent = 'Height follows the frame aspect ratio. Textures are embedded in the GLB.';
+    container.append(caption, createButton('Materials & 3D preview', { small: true, onClick: ctx.configureGlb }));
+    return;
+  }
 
   // ---- Size: Scale (a multiplier) or explicit Dimensions (Width × Height) ----
   const dimsMode = !!(t.width || t.height);
